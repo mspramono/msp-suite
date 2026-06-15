@@ -17,14 +17,14 @@
         <div id="upload-section" class="space-y-4">
             <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-850">
                 <input type="file" id="file-input" class="hidden" accept=".pdf,.docx">
-                <label for="file-input" class="cursor-pointer block">
+                <label for="file-input" class="cursor-pointer block" id="drop-zone-label">
                     <span class="text-indigo-400 font-semibold text-lg block mb-1">Pilih atau Seret File</span>
                     <span class="text-sm text-slate-400 block">Mendukung PDF & Word (.docx)</span>
                     <span class="text-xs text-amber-400 block mt-2">⚠️ Bebas file besar, diproses lokal di memorimu!</span>
                 </label>
             </div>
             
-            <div id="upload-status-alert" class="hidden text-center p-3 rounded-lg text-sm font-medium"></div>
+            <div id="upload-status-alert" class="hidden text-center p-3 rounded-lg text-sm font-medium bg-emerald-950 text-emerald-400 border border-emerald-800"></div>
 
             <button onclick="processFile()" id="btn-process" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition shadow-lg flex items-center justify-center space-x-2">
                 <span id="btn-text">Proses & Hitung Halaman</span>
@@ -124,24 +124,52 @@
 
         if (dropZone && fileInput) {
             dropZone.onclick = () => fileInput.click();
-            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-500'); };
-            dropZone.ondragleave = () => dropZone.classList.remove('border-indigo-500');
+            
+            // Perbaikan typo fatal dari onsragover menjadi ondragover
+            dropZone.ondragover = (e) => { 
+                e.preventDefault(); 
+                dropZone.classList.add('border-indigo-500', 'bg-slate-800'); 
+            };
+            
+            dropZone.ondragleave = () => { 
+                dropZone.classList.remove('border-indigo-500', 'bg-slate-800'); 
+            };
+            
             dropZone.ondrop = (e) => {
                 e.preventDefault();
-                dropZone.classList.remove('border-indigo-500');
+                dropZone.classList.remove('border-indigo-500', 'bg-slate-800');
                 if(e.dataTransfer.files.length > 0) {
                     fileInput.files = e.dataTransfer.files;
                     handleFileSelectionVisuals();
                 }
             };
-            fileInput.onchange = () => { handleFileSelectionVisuals(); };
+            
+            fileInput.onchange = () => { 
+                handleFileSelectionVisuals(); 
+            };
         }
 
+        // FUNGSI NOTIFIKASI VALIDASI BERHASIL MEMILIH FILE
         function handleFileSelectionVisuals() {
             const alertBox = document.getElementById('upload-status-alert');
+            const labelZone = document.getElementById('drop-zone-label');
+            
             if (fileInput.files.length > 0) {
-                alertBox.className = "text-center p-3 rounded-lg text-sm font-medium bg-emerald-950 text-emerald-400 border border-emerald-800";
-                alertBox.innerText = `✔️ Berhasil memuat file: "${fileInput.files[0].name}". Silakan klik tombol proses.`;
+                const fileName = fileInput.files[0].name;
+                
+                // Ubah gaya visual dropzone menandakan file masuk
+                dropZone.classList.remove('border-slate-600');
+                dropZone.classList.add('border-emerald-500', 'bg-emerald-950/20');
+                
+                // Ganti teks di dalam box dropzone
+                labelZone.innerHTML = `
+                    <span class="text-emerald-400 font-bold text-lg block mb-1">📄 Berkas Terbaca Terbuka</span>
+                    <span class="text-sm text-slate-200 block font-mono bg-slate-900/60 p-2 rounded border border-slate-700">${fileName}</span>
+                `;
+                
+                // Tampilkan banner notifikasi hijau
+                alertBox.className = "text-center p-3 rounded-lg text-sm font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 block animate-fadeIn";
+                alertBox.innerText = `✔️ Sukses memuat berkas lokal. Silakan klik tombol di bawah untuk memproses halaman.`;
                 alertBox.classList.remove('hidden');
             }
         }
@@ -151,8 +179,10 @@
             const file = fileInput.files[0];
 
             const btnText = document.getElementById('btn-text');
+            const btnProcess = document.getElementById('btn-process');
+            
             btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu...";
-            document.getElementById('btn-process').disabled = true;
+            btnProcess.disabled = true;
             extractedPagesText = [];
 
             try {
@@ -163,6 +193,8 @@
                     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                     
                     for (let i = 1; i <= pdf.numPages; i++) {
+                        // Tampilkan perubahan dinamis ekstraksi teks per halaman ke user
+                        btnText.innerText = `⏳ Membaca Halaman ${i} dari ${pdf.numPages}...`;
                         const page = await pdf.getPage(i);
                         const textContent = await page.getTextContent();
                         const pageText = textContent.items.map(item => item.str).join(' ');
@@ -189,9 +221,11 @@
 
             } catch (error) {
                 alert("Error: " + error.message);
+                // Reset visual jika error
+                refreshApp();
             } finally {
                 btnText.innerText = "Proses & Hitung Halaman";
-                document.getElementById('btn-process').disabled = false;
+                btnProcess.disabled = false;
             }
         }
 
@@ -222,7 +256,6 @@
             executeSpeech();
         }
 
-        // KUNCI PENYELESAIAN HP: Mengirimkan satu halaman utuh langsung agar kebal kebijakan penguncian otomatis
         function executeSpeech() {
             if (synth) {
                 synth.cancel();
@@ -239,11 +272,9 @@
                 return;
             }
 
-            // Sync Slider UI
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            // Hitung kemajuan rentang halaman
             let totalRange = (endIdx - startIdx) + 1;
             let currentProgress = (currentPagePlayingIdx - startIdx);
             let percent = totalRange > 0 ? Math.round((currentProgress / totalRange) * 100) : 0;
@@ -273,7 +304,6 @@
                 utterance.voice = matchedVoice;
             }
 
-            // Perpindahan halaman tunggal yang aman bagi memori internal browser seluler
             utterance.onend = () => {
                 if (!isPaused && !isUserSeeking) {
                     currentPagePlayingIdx++;
@@ -368,7 +398,15 @@
             document.getElementById('control-section').classList.add('hidden');
             document.getElementById('audio-player').classList.add('hidden');
             document.getElementById('upload-status-alert').classList.add('hidden');
-            document.getElementById('file-input').value = "";
+            
+            // Kembalikan visual dropzone ke default awal
+            dropZone.className = "border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-850";
+            document.getElementById('drop-zone-label').innerHTML = `
+                <span class="text-indigo-400 font-semibold text-lg block mb-1">Pilih atau Seret File</span>
+                <span class="text-sm text-slate-400 block">Mendukung PDF & Word (.docx)</span>
+                <span class="text-xs text-amber-400 block mt-2">⚠️ Bebas file besar, diproses lokal di memorimu!</span>
+            `;
+            fileInput.value = "";
         }
 
         function refreshApp() {
