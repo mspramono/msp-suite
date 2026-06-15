@@ -15,158 +15,153 @@
         <p class="text-center text-xs text-slate-400 mb-6">Proses 100% aman di perangkatmu tanpa upload ke server</p>
         
         <div id="upload-section" class="space-y-4">
-            <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition-colors bg-slate-850 cursor-pointer">
+            <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-850">
                 <input type="file" id="file-input" class="hidden" accept=".pdf,.docx">
-                <label for="file-input" class="cursor-pointer block space-y-3">
-                    <div class="text-slate-400"><i class="fas fa-cloud-upload-alt text-4xl text-indigo-400"></i></div>
-                    <span class="text-indigo-300 font-semibold block">Pilih atau seret file buku Anda ke sini</span>
-                    <span class="text-xs text-slate-400 block">Mendukung format PDF atau Word (.docx)</span>
+                <label for="file-input" class="cursor-pointer block">
+                    <span class="text-indigo-400 font-semibold text-lg block mb-1">Pilih atau Seret File</span>
+                    <span class="text-sm text-slate-400 block">Mendukung PDF & Word (.docx)</span>
+                    <span class="text-xs text-amber-400 block mt-2">⚠️ Bebas file besar, diproses lokal di memorimu!</span>
                 </label>
             </div>
             
-            <div id="upload-status-alert" class="hidden text-center p-3 rounded-lg text-sm font-medium bg-emerald-950 text-emerald-400 border border-emerald-800"></div>
+            <div id="upload-status-alert" class="hidden text-center p-3 rounded-lg text-sm font-medium"></div>
 
-            <button onclick="processFile()" id="btn-process" class="w-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 py-3 rounded-xl font-bold transition-all transform active:scale-[0.98] shadow-lg shadow-indigo-900/40 text-sm">
+            <button onclick="processFile()" id="btn-process" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition shadow-lg flex items-center justify-center space-x-2">
                 <span id="btn-text">Proses & Hitung Halaman</span>
             </button>
         </div>
 
-        <div id="control-section" class="hidden space-y-5">
-            <div class="bg-slate-850 p-4 rounded-xl border border-slate-700 space-y-3">
-                <div class="flex justify-between items-center text-xs text-slate-400">
-                    <div>Total Dokumen: <span id="total-pages" class="font-bold text-indigo-400 text-sm">0</span> Halaman</div>
-                    <button onclick="backToUpload()" class="text-rose-400 hover:text-rose-300 transition-colors font-medium">Ganti Dokumen</button>
-                </div>
-                
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Mulai Dari Halaman</label>
-                        <input type="number" id="start-page" value="1" min="1" onchange="updateTimelineBoundaries()" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-center text-sm font-bold text-white focus:outline-none focus:border-indigo-500">
-                    </div>
-                    <div>
-                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Sampai Halaman</label>
-                        <input type="number" id="end-page" value="1" min="1" onchange="updateTimelineBoundaries()" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-center text-sm font-bold text-white focus:outline-none focus:border-indigo-500">
-                    </div>
-                </div>
-
-                <div>
-                    <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Pilih Bahasa Suara (Voice)</label>
-                    <select id="lang-select" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500">
-                        <option value="id-ID" selected>🇮🇩 Bahasa Indonesia</option>
-                        <option value="en-US">🇺🇸 English (US)</option>
-                    </select>
+        <div id="control-section" class="hidden space-y-6">
+            <div class="flex justify-between items-center p-3 bg-slate-750 rounded-xl border border-slate-700 text-sm">
+                <div>Total: <span id="total-pages" class="font-bold text-indigo-400">0</span> Halaman</div>
+                <div class="space-x-2">
+                    <button onclick="refreshApp()" class="text-amber-400 hover:underline">🔄 Refresh</button>
+                    <button onclick="backToUpload()" class="text-slate-400 hover:underline">⬅️ Kembali</button>
                 </div>
             </div>
 
-            <button onclick="startReading()" id="btn-speak" class="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 py-3.5 rounded-xl font-bold transition-all transform active:scale-[0.98] shadow-lg shadow-emerald-900/40 text-sm flex items-center justify-center gap-2">
-                <span>🔊 Mulai Bacakan Rentang Halaman</span>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Mulai Halaman:</label>
+                    <input type="number" id="start-page" min="1" value="1" onchange="updateTimelineBoundaries()" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-center text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Sampai Halaman:</label>
+                    <input type="number" id="end-page" min="1" value="1" onchange="updateTimelineBoundaries()" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-center text-white focus:outline-none focus:border-indigo-500">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Bahasa Voice Over:</label>
+                <select id="lang-select" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                    <option value="id-ID">Bahasa Indonesia</option>
+                    <option value="en-US">English (US)</option>
+                </select>
+            </div>
+
+            <button onclick="startReading()" id="btn-speak" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition shadow-lg text-lg">
+                🔊 Mulai Bacakan Buku
             </button>
 
-            <div id="audio-player" class="hidden bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-                <div class="flex justify-between items-center text-[11px] text-slate-400 font-medium">
-                    <div class="flex items-center gap-1">Halaman Saat Ini: <span id="current-timeline-page" class="text-indigo-400 font-bold text-xs">1</span></div>
-                    <div>Target Batas: Halaman <span id="target-timeline-max" class="font-semibold text-slate-300">1</span></div>
-                </div>
-
-                <input type="range" id="audio-timeline" min="1" max="1" value="1" oninput="onTimelineSliderDrag(this.value)" onchange="onTimelineSliderChange(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none accent-indigo-500 cursor-pointer">
-
-                <div class="text-center bg-slate-900/80 p-3 rounded-lg border border-slate-800">
-                    <p id="reading-status" class="text-xs text-amber-400 font-medium leading-relaxed max-h-16 overflow-y-auto">Menyiapkan pemutar audio...</p>
-                    <div id="progress-percentage" class="text-[10px] text-slate-500 mt-1 font-mono">Kemajuan Halaman: 0%</div>
-                    <div id="time-estimate" class="text-[10px] text-indigo-400 mt-0.5 font-medium">Sisa Waktu Halaman: --:--</div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="pauseSpeech()" class="bg-amber-500 hover:bg-amber-400 text-slate-900 py-2 rounded-lg font-bold text-xs transition-colors">Jeda (Pause)</button>
-                    <button onclick="resumeSpeech()" class="bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg font-bold text-xs transition-colors">Lanjutkan (Play)</button>
-                </div>
-
-                <div class="flex items-center justify-center gap-3 text-xs bg-slate-850 p-2 rounded-lg border border-slate-800">
-                    <span class="text-slate-400 font-medium">Kecepatan Suara:</span>
-                    <div class="flex gap-1.5">
-                        <button onclick="setSpeed(1.0)" class="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-[10px] font-bold transition-colors">1.0x</button>
-                        <button onclick="setSpeed(1.25)" class="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-[10px] font-bold transition-colors">1.25x</button>
-                        <button onclick="setSpeed(1.5)" class="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-[10px] font-bold transition-colors">1.5x</button>
+            <div id="audio-player" class="hidden border-t border-slate-700 pt-4 space-y-4">
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Halaman Ke: <span id="current-timeline-page" class="text-indigo-400 font-bold">1</span></span>
+                        <span>Target: Hal <span id="target-timeline-max">1</span></span>
                     </div>
-                    <span id="speed-indicator" class="text-indigo-400 font-bold font-mono text-[11px]">(1.0x)</span>
+                    <input type="range" id="audio-timeline" min="1" max="1" value="1" onmousedown="isUserSeeking=true" oninput="document.getElementById('current-timeline-page').innerText = this.value;" onchange="seekToPage(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
                 </div>
 
-                <button onclick="downloadFullAudioRange()" id="download-range-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-semibold border border-slate-700 transition-colors flex items-center justify-center gap-1">
-                    <span>📥 Unduh Audio Rentang Halaman (.txt)</span>
-                </button>
-            </div>
-        </div>
+                <p id="reading-status" class="text-center text-sm text-amber-400 font-medium bg-slate-900/55 py-2 rounded-lg border border-slate-750">Menyiapkan suara...</p>
+                
+                <div class="flex justify-center space-x-4">
+                    <button onclick="pauseSpeech()" class="w-1/2 bg-amber-500 hover:bg-amber-600 text-slate-900 py-3 rounded-xl font-bold transition shadow-md">Pause</button>
+                    <button onclick="resumeSpeech()" class="w-1/2 bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-bold transition shadow-md">Play/Resume</button>
+                </div>
 
-        <div class="mt-6 border-t border-slate-700 pt-4 flex justify-between items-center text-[11px] text-slate-500">
-            <div>M. Sidiq Pramono &copy; 2024</div>
-            <button onclick="refreshApp()" class="hover:text-indigo-400 transition-colors font-medium">🔄 Muat Ulang Aplikasi</button>
+                <div class="flex justify-center items-center space-x-2 text-sm bg-slate-750 p-2 rounded-lg border border-slate-700">
+                    <span class="text-slate-400">Kecepatan:</span>
+                    <button onclick="setSpeed(1)" class="bg-slate-700 px-4 py-1 rounded hover:bg-slate-600 text-xs font-semibold">1x</button>
+                    <button onclick="setSpeed(1.3)" class="bg-slate-700 px-4 py-1 rounded hover:bg-slate-600 text-xs font-semibold">1.3x</button>
+                    <span id="speed-indicator" class="text-indigo-400 font-bold ml-2">(1x)</span>
+                </div>
+
+                <div class="bg-slate-750 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-xs text-slate-400 mb-2">📥 Unduh Teks Narasi Rentang Aktif: Mengekstrak teks bersih dari halaman terpilih untuk dokumentasi audio Anda.</p>
+                    <button onclick="downloadFullAudioRange()" id="btn-download" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg text-sm font-semibold transition shadow">
+                        📥 Unduh Teks Rentang Halaman (.txt)
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        // Konfigurasi Worker PDFJS asli Anda
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         let extractedPagesText = []; 
         let synth = window.speechSynthesis;
         let utterance = null;
-        let currentSpeed = 1.0;
+        let currentSpeed = 1;
         let currentPagePlayingIdx = 0;
+        let isUserSeeking = false;
         let isPaused = false;
         
         let textChunks = [];
         let currentChunkIdx = 0;
-        let isUserSeeking = false;
+        let pauseTimeout = null;
 
-        // Inisialisasi engine suara bawaan browser PC/HP agar responsif sejak awal
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
                 synth.getVoices();
             }
         }
         initVoices();
-        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = initVoices;
+        window.speechSynthesis.onvoiceschanged = initVoices;
+
+        // Reset terstruktur khusus mobile: Menghentikan audio tanpa menghancurkan properti instans inti
+        function cleanSpeechControl() {
+            clearTimeout(pauseTimeout);
+            if (synth) {
+                synth.cancel();
+            }
         }
 
-        // Dropzone & File Input Handler Asli Anda
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
 
-        if(dropZone && fileInput) {
+        if (dropZone && fileInput) {
             dropZone.onclick = () => fileInput.click();
-            dropZone.onsragover = (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-500'); };
+            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-500'); };
             dropZone.ondragleave = () => dropZone.classList.remove('border-indigo-500');
             dropZone.ondrop = (e) => {
                 e.preventDefault();
                 dropZone.classList.remove('border-indigo-500');
                 if(e.dataTransfer.files.length > 0) {
                     fileInput.files = e.dataTransfer.files;
-                    triggerFileSelectedAlert();
+                    handleFileSelectionVisuals();
                 }
             };
-            fileInput.onchange = () => { triggerFileSelectedAlert(); };
+            fileInput.onchange = () => { handleFileSelectionVisuals(); };
         }
 
-        function triggerFileSelectedAlert() {
+        function handleFileSelectionVisuals() {
             const alertBox = document.getElementById('upload-status-alert');
             if (fileInput.files.length > 0) {
-                alertBox.className = "text-center p-3 rounded-lg text-sm font-medium bg-emerald-950 text-emerald-400 border border-emerald-800 animate-pulse";
-                alertBox.innerText = `✔️ File siap diproses: "${fileInput.files[0].name}"`;
+                alertBox.className = "text-center p-3 rounded-lg text-sm font-medium bg-emerald-950 text-emerald-400 border border-emerald-800";
+                alertBox.innerText = `✔️ Berhasil memuat file: "${fileInput.files[0].name}". Silakan klik tombol proses.`;
                 alertBox.classList.remove('hidden');
             }
         }
 
-        // Pengekstrak Teks Dokumen Asli Anda yang Stabil
         async function processFile() {
+            if (!fileInput.files.length) return alert("Silakan pilih file terlebih dahulu!");
             const file = fileInput.files[0];
-            if (!file) return alert("Silakan pilih atau seret file buku terlebih dahulu!");
 
             const btnText = document.getElementById('btn-text');
-            const btnProcess = document.getElementById('btn-process');
-            
-            btnText.innerText = "⏳ Mengekstrak teks dokumen... Mohon Tunggu...";
-            btnProcess.disabled = true;
+            btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu...";
+            document.getElementById('btn-process').disabled = true;
+
             extractedPagesText = [];
 
             try {
@@ -203,50 +198,45 @@
                 document.getElementById('control-section').classList.remove('hidden');
 
             } catch (error) {
-                alert("Error saat memproses dokumen: " + error.message);
+                alert("Error: " + error.message);
             } finally {
                 btnText.innerText = "Proses & Hitung Halaman";
-                btnProcess.disabled = false;
+                document.getElementById('btn-process').disabled = false;
             }
         }
 
         function updateTimelineBoundaries() {
-            const startPage = Math.max(1, parseInt(document.getElementById('start-page').value) || 1);
-            const endPage = Math.min(extractedPagesText.length, parseInt(document.getElementById('end-page').value) || extractedPagesText.length);
+            const startPage = parseInt(document.getElementById('start-page').value) || 1;
+            const endPage = parseInt(document.getElementById('end-page').value) || extractedPagesText.length;
             
             const timeline = document.getElementById('audio-timeline');
             timeline.min = startPage;
             timeline.max = endPage;
-            if(!isUserSeeking) {
-                timeline.value = startPage;
-                document.getElementById('current-timeline-page').innerText = startPage;
-            }
+            timeline.value = startPage;
+            document.getElementById('current-timeline-page').innerText = startPage;
             document.getElementById('target-timeline-max').innerText = endPage;
         }
 
-        // Slider Timeline Control
-        function onTimelineSliderDrag(value) {
+        function seekToPage(pageValue) {
             isUserSeeking = true;
-            document.getElementById('current-timeline-page').innerText = value;
-        }
-
-        function onTimelineSliderChange(value) {
-            isUserSeeking = false;
-            currentPagePlayingIdx = parseInt(value) - 1;
+            currentPagePlayingIdx = parseInt(pageValue) - 1;
             currentChunkIdx = 0;
-            isPaused = false;
             
-            if(synth) synth.cancel();
-            preparePageChunks();
-            playChunkSequence();
+            cleanSpeechControl();
+            
+            setTimeout(() => {
+                isPaused = false;
+                isUserSeeking = false;
+                preparePageChunks();
+                playChunkSequence();
+            }, 150); 
         }
 
         function startReading() {
-            if(synth) synth.cancel();
+            cleanSpeechControl();
             isPaused = false;
             isUserSeeking = false;
-            
-            currentPagePlayingIdx = Math.max(0, (parseInt(document.getElementById('start-page').value) || 1) - 1);
+            currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
             currentChunkIdx = 0;
 
             document.getElementById('audio-player').classList.remove('hidden');
@@ -254,86 +244,58 @@
             playChunkSequence();
         }
 
-        // Pemecah Kalimat yang Aman untuk RAM HP
+        // Tokenizer Teks Kebal Error: Memotong kalimat menjadi string murni tanpa membungkus objek
         function preparePageChunks() {
             let rawText = extractedPagesText[currentPagePlayingIdx] || "";
             textChunks = [];
+
+            // Ganti baris baru dan tabulasi ekstrim menjadi spasi tunggal agar hardware HP tidak tersedak
+            rawText = rawText.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ');
+
+            // Potong teks berdasarkan tanda baca secara aman
+            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
             
-            // Bersihkan baris baru ekstrem yang sering bikin HP crash/diam
-            rawText = rawText.replace(/[\r\n]+/g, ' ');
-
-            let lines = rawText.split(/\s+/);
-            let currentSentence = "";
-
-            // Gabungkan kata demi kata menjadi kalimat berukuran pas untuk nafas audio HP
-            for (let i = 0; i < lines.length; i++) {
-                currentSentence += lines[i] + " ";
-                if (lines[i].endsWith('.') || lines[i].endsWith(',') || lines[i].endsWith('?') || lines[i].endsWith('!') || currentSentence.length > 90) {
-                    let trimmed = currentSentence.trim();
-                    if (trimmed) textChunks.push(trimmed);
-                    currentSentence = "";
+            sentences.forEach(sentence => {
+                let trimmed = sentence.trim();
+                // Lewati string kosong agar tidak memicu pemblokiran silent bug pada mobile browser
+                if (trimmed.length > 0) {
+                    textChunks.push(trimmed);
                 }
-            }
-            if (currentSentence.trim()) {
-                textChunks.push(currentSentence.trim());
-            }
+            });
 
-            if(textChunks.length === 0) {
-                textChunks.push("Halaman kosong.");
+            if (textChunks.length === 0) {
+                textChunks.push("Halaman kosong atau tidak ada teks.");
             }
         }
 
-        // CORE ENGINE: Penanganan Audio Sekuensial yang Solid untuk HP & PC
         function playChunkSequence() {
-            if (isPaused) return;
+            if (isPaused || isUserSeeking) return;
 
-            const endPage = Math.min(extractedPagesText.length - 1, (parseInt(document.getElementById('end-page').value) || extractedPagesText.length) - 1);
+            const endPage = parseInt(document.getElementById('end-page').value) - 1;
             
-            // Jika chunk pada halaman ini habis, naikkan halaman
             if (currentChunkIdx >= textChunks.length) {
                 currentPagePlayingIdx++;
                 currentChunkIdx = 0; 
                 
                 if (currentPagePlayingIdx > endPage) {
-                    document.getElementById('reading-status').innerText = "🏁 Selesai membacakan rentang halaman target.";
-                    document.getElementById('progress-percentage').innerText = "Kemajuan Halaman: 100%";
-                    document.getElementById('time-estimate').innerText = "Sisa Waktu Halaman: Selesai";
-                    if(synth) synth.cancel();
+                    document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
+                    cleanSpeechControl();
                     return;
                 }
                 preparePageChunks();
             }
 
-            // Sync visual timeline slider
-            if (!isUserSeeking) {
-                document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
-                document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
-            }
+            document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
+            document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
             let currentText = textChunks[currentChunkIdx];
-            if (!currentText || currentText.trim() === "") {
+            if (!currentText) {
                 currentChunkIdx++;
                 playChunkSequence();
                 return;
             }
 
-            // Hitung dan perbarui statistik kalkulasi teks asli Anda
-            const percent = Math.round(((currentChunkIdx + 1) / textChunks.length) * 100);
-            document.getElementById('progress-percentage').innerText = `Kemajuan Halaman: ${percent}%`;
-            
-            const totalWordsRemaining = textChunks.slice(currentChunkIdx).join(' ').split(/\s+/).length;
-            const wordsPerMinute = 140 * currentSpeed;
-            const totalSecondsRemaining = Math.round((totalWordsRemaining / wordsPerMinute) * 60);
-            const mins = Math.floor(totalSecondsRemaining / 60);
-            const secs = totalSecondsRemaining % 60;
-            document.getElementById('time-estimate').innerText = `Sisa Waktu Halaman: ${mins}:${secs < 10 ? '0' : ''}${secs}`;
-
-            document.getElementById('reading-status').innerText = `🔊 Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length}): "${currentText}"`;
-
-            // METODE FIXED GLOBAL INSTANCE: Jangan ditumpuk di memori, bersihkan sisa audio hardware sebelumnya
-            if(synth.speaking) {
-                synth.cancel();
-            }
+            document.getElementById('reading-status').innerText = `🔊 Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length}): "${currentText.substring(0, 50)}..."`;
 
             utterance = new SpeechSynthesisUtterance(currentText);
             
@@ -341,86 +303,83 @@
             utterance.lang = selectedLang;
             utterance.rate = currentSpeed;
 
-            // Pencarian kecocokan lokal voice mesin HP yang kebal error kode bahasa
             const voices = synth.getVoices();
-            let targetVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-') === selectedLang.toLowerCase()) ||
-                              voices.find(v => v.lang.startsWith(selectedLang.split('-')[0]));
-            if (targetVoice) {
-                utterance.voice = targetVoice;
+            let matchedVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-') === selectedLang.toLowerCase()) ||
+                               voices.find(v => v.lang.startsWith(selectedLang.split('-')[0]));
+            if (matchedVoice) {
+                utterance.voice = matchedVoice;
             }
 
-            // EVENT BINDING MURNI: Mengandalkan respon hardware HP internal tanpa re-trigger paksa timeout external
+            // Pemicu Native Berantai yang Ringan
             utterance.onend = () => {
-                if (!isPaused) {
-                    currentChunkIdx++;
-                    // Jeda 60ms memberikan ruang bagi threading audio browser HP untuk membebaskan buffer RAM
-                    setTimeout(() => { playChunkSequence(); }, 60);
+                if (!isPaused && !isUserSeeking) {
+                    currentChunkIdx++; 
+                    // Memberikan delay napas mikro 80ms untuk membersihkan antrean audio internal HP
+                    pauseTimeout = setTimeout(playChunkSequence, 80);
                 }
             };
 
-            utterance.onerror = (event) => {
-                console.warn("Speech Synthesis Utterance Warning/Error caught: ", event.error);
-                // Jika dicegat sistem karena interupsi manual, jangan paksa lanjut otomatis
-                if (event.error === 'interrupted') return;
-                
-                if (!isPaused) {
+            utterance.onerror = (e) => {
+                console.warn("TTS Event Notice:", e.error);
+                if (e.error === 'interrupted') return;
+                if (!isPaused && !isUserSeeking) {
                     currentChunkIdx++;
-                    setTimeout(() => { playChunkSequence(); }, 60);
+                    pauseTimeout = setTimeout(playChunkSequence, 80);
                 }
             };
 
-            // Mainkan suara
             synth.speak(utterance);
         }
 
         function pauseSpeech() {
-            isPaused = true;
-            if (synth) {
-                synth.pause();
+            if (!isPaused) {
+                isPaused = true;
+                clearTimeout(pauseTimeout);
+                if (synth) {
+                    synth.cancel();
+                }
+                document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
             }
-            document.getElementById('reading-status').innerText = "⏸️ Pembacaan dijeda (Paused)";
         }
 
         function resumeSpeech() {
             if (isPaused) {
                 isPaused = false;
-                // Di beberapa versi browser HP, fungsi synth.resume() sering di-ignore jika sudah terlalu lama dijeda. 
-                // Solusi terkuat adalah menembak ulang urutan chunk saat ini secara fresh dari interaksi sentuhan.
-                if (synth && synth.paused) {
-                    synth.resume();
-                    document.getElementById('reading-status').innerText = `🔊 Melanjutkan...`;
-                } else {
-                    playChunkSequence();
-                }
+                document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
+                playChunkSequence();
             }
         }
 
         function setSpeed(speed) {
             currentSpeed = speed;
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
-            if (synth && synth.speaking && !isPaused) {
-                playChunkSequence();
+            
+            if (synth.speaking && !isPaused) {
+                cleanSpeechControl();
+                setTimeout(() => {
+                    playChunkSequence(); 
+                }, 150);
             }
         }
 
-        // Fitur download teks narasi bawaan file asli Anda
         function downloadFullAudioRange() {
-            const startPage = Math.max(1, parseInt(document.getElementById('start-page').value) || 1);
-            const endPage = Math.min(extractedPagesText.length, parseInt(document.getElementById('end-page').value) || extractedPagesText.length);
-            const downloadBtn = document.getElementById('download-range-btn');
+            const startPage = parseInt(document.getElementById('start-page').value) || 1;
+            const endPage = parseInt(document.getElementById('end-page').value) || extractedPagesText.length;
             
-            downloadBtn.innerText = "⏳ Memproses berkas unduhan...";
+            const totalToDownload = (endPage - startPage) + 1;
+            if (totalToDownload > 25) {
+                return alert(`⚠️ Batas maksimal pengunduhan sekali jalan adalah 25 halaman.`);
+            }
+
+            const downloadBtn = document.getElementById('btn-download');
+            downloadBtn.innerText = "⏳ Mendownload Teks...";
             downloadBtn.disabled = true;
 
             try {
-                let txtContent = `==================================================\n`;
-                txtContent += `       TEKS NARASI SUARA BUKU (HALAMAN ${startPage} - ${endPage})\n`;
-                txtContent += `==================================================\n\n`;
-
+                let txtContent = `--- SUARA BUKU TEKS EKSTRAKSI (HALAMAN ${startPage} - ${endPage}) ---\n\n`;
                 for (let i = startPage - 1; i < endPage; i++) {
                     if (extractedPagesText[i]) {
-                        txtContent += `--- HALAMAN ${i + 1} ---\n`;
-                        txtContent += `${extractedPagesText[i].trim()}\n\n`;
+                        txtContent += `[HALAMAN ${i + 1}]\n${extractedPagesText[i]}\n\n`;
                     }
                 }
 
@@ -434,9 +393,9 @@
 
                 alert("✔️ File Teks Narasi Berhasil Terunduh Sempurna!");
             } catch (err) {
-                alert("Gagal mengunduh berkas teks: " + err.message);
+                alert("Gagal mendownload: " + err.message);
             } finally {
-                downloadBtn.innerText = "📥 Unduh Audio Rentang Halaman (.txt)";
+                downloadBtn.innerText = "📥 Unduh Teks Rentang Halaman (.txt)";
                 downloadBtn.disabled = false;
             }
         }
@@ -444,9 +403,7 @@
         function backToUpload() {
             isPaused = false;
             isUserSeeking = false;
-            if(synth) {
-                synth.cancel();
-            }
+            cleanSpeechControl();
             document.getElementById('upload-section').classList.remove('hidden');
             document.getElementById('control-section').classList.add('hidden');
             document.getElementById('audio-player').classList.add('hidden');
@@ -455,7 +412,7 @@
         }
 
         function refreshApp() {
-            if(synth) synth.cancel();
+            cleanSpeechControl();
             location.reload();
         }
     </script>
