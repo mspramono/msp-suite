@@ -72,7 +72,10 @@
                     <input type="range" id="audio-timeline" min="1" max="1" value="1" onmousedown="isUserSeeking=true" oninput="document.getElementById('current-timeline-page').innerText = this.value;" onchange="seekToPage(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
                 </div>
 
-                <p id="reading-status" class="text-center text-sm text-amber-400 font-medium bg-slate-900/55 py-2 rounded-lg border border-slate-750">Menyiapkan suara...</p>
+                <div class="text-center bg-slate-900/55 py-3 px-2 rounded-lg border border-slate-750">
+                    <p id="reading-status" class="text-sm text-amber-400 font-medium leading-relaxed">Menyiapkan suara...</p>
+                    <div id="progress-percentage" class="text-[10px] text-slate-500 mt-1 font-mono">Kemajuan Rentang: 0%</div>
+                </div>
                 
                 <div class="flex justify-center space-x-4">
                     <button onclick="pauseSpeech()" class="w-1/2 bg-amber-500 hover:bg-amber-600 text-slate-900 py-3 rounded-xl font-bold transition shadow-md">Pause</button>
@@ -83,6 +86,7 @@
                     <span class="text-slate-400">Kecepatan:</span>
                     <button onclick="setSpeed(1)" class="bg-slate-700 px-4 py-1 rounded hover:bg-slate-600 text-xs font-semibold">1x</button>
                     <button onclick="setSpeed(1.3)" class="bg-slate-700 px-4 py-1 rounded hover:bg-slate-600 text-xs font-semibold">1.3x</button>
+                    <button onclick="setSpeed(1.6)" class="bg-slate-700 px-4 py-1 rounded hover:bg-slate-600 text-xs font-semibold">1.6x</button>
                     <span id="speed-indicator" class="text-indigo-400 font-bold ml-2">(1x)</span>
                 </div>
 
@@ -107,10 +111,6 @@
         let isUserSeeking = false;
         let isPaused = false;
         
-        let textChunks = [];
-        let currentChunkIdx = 0;
-        let pauseTimeout = null;
-
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
                 synth.getVoices();
@@ -118,14 +118,6 @@
         }
         initVoices();
         window.speechSynthesis.onvoiceschanged = initVoices;
-
-        // Reset terstruktur khusus mobile: Menghentikan audio tanpa menghancurkan properti instans inti
-        function cleanSpeechControl() {
-            clearTimeout(pauseTimeout);
-            if (synth) {
-                synth.cancel();
-            }
-        }
 
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
@@ -161,7 +153,6 @@
             const btnText = document.getElementById('btn-text');
             btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu...";
             document.getElementById('btn-process').disabled = true;
-
             extractedPagesText = [];
 
             try {
@@ -191,7 +182,6 @@
 
                 document.getElementById('total-pages').innerText = extractedPagesText.length;
                 document.getElementById('end-page').value = extractedPagesText.length;
-                
                 updateTimelineBoundaries();
 
                 document.getElementById('upload-section').classList.add('hidden');
@@ -218,86 +208,59 @@
         }
 
         function seekToPage(pageValue) {
-            isUserSeeking = true;
             currentPagePlayingIdx = parseInt(pageValue) - 1;
-            currentChunkIdx = 0;
-            
-            cleanSpeechControl();
-            
-            setTimeout(() => {
-                isPaused = false;
-                isUserSeeking = false;
-                preparePageChunks();
-                playChunkSequence();
-            }, 150); 
+            isPaused = false;
+            isUserSeeking = false;
+            executeSpeech();
         }
 
         function startReading() {
-            cleanSpeechControl();
             isPaused = false;
             isUserSeeking = false;
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
-            currentChunkIdx = 0;
-
             document.getElementById('audio-player').classList.remove('hidden');
-            preparePageChunks();
-            playChunkSequence();
+            executeSpeech();
         }
 
-        // Tokenizer Teks Kebal Error: Memotong kalimat menjadi string murni tanpa membungkus objek
-        function preparePageChunks() {
-            let rawText = extractedPagesText[currentPagePlayingIdx] || "";
-            textChunks = [];
-
-            // Ganti baris baru dan tabulasi ekstrim menjadi spasi tunggal agar hardware HP tidak tersedak
-            rawText = rawText.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ');
-
-            // Potong teks berdasarkan tanda baca secara aman
-            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
-            
-            sentences.forEach(sentence => {
-                let trimmed = sentence.trim();
-                // Lewati string kosong agar tidak memicu pemblokiran silent bug pada mobile browser
-                if (trimmed.length > 0) {
-                    textChunks.push(trimmed);
-                }
-            });
-
-            if (textChunks.length === 0) {
-                textChunks.push("Halaman kosong atau tidak ada teks.");
-            }
-        }
-
-        function playChunkSequence() {
-            if (isPaused || isUserSeeking) return;
-
-            const endPage = parseInt(document.getElementById('end-page').value) - 1;
-            
-            if (currentChunkIdx >= textChunks.length) {
-                currentPagePlayingIdx++;
-                currentChunkIdx = 0; 
-                
-                if (currentPagePlayingIdx > endPage) {
-                    document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    cleanSpeechControl();
-                    return;
-                }
-                preparePageChunks();
+        // KUNCI PENYELESAIAN HP: Mengirimkan satu halaman utuh langsung agar kebal kebijakan penguncian otomatis
+        function executeSpeech() {
+            if (synth) {
+                synth.cancel();
             }
 
-            document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
-            document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
+            const startPage = parseInt(document.getElementById('start-page').value) || 1;
+            const endPage = parseInt(document.getElementById('end-page').value) || extractedPagesText.length;
+            const endIdx = endPage - 1;
+            const startIdx = startPage - 1;
 
-            let currentText = textChunks[currentChunkIdx];
-            if (!currentText) {
-                currentChunkIdx++;
-                playChunkSequence();
+            if (currentPagePlayingIdx > endIdx) {
+                document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
+                document.getElementById('progress-percentage').innerText = "Kemajuan Rentang: 100%";
                 return;
             }
 
-            document.getElementById('reading-status').innerText = `🔊 Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length}): "${currentText.substring(0, 50)}..."`;
+            // Sync Slider UI
+            document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
+            document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            utterance = new SpeechSynthesisUtterance(currentText);
+            // Hitung kemajuan rentang halaman
+            let totalRange = (endIdx - startIdx) + 1;
+            let currentProgress = (currentPagePlayingIdx - startIdx);
+            let percent = totalRange > 0 ? Math.round((currentProgress / totalRange) * 100) : 0;
+            document.getElementById('progress-percentage').innerText = `Kemajuan Rentang: ${percent}%`;
+
+            let pageText = extractedPagesText[currentPagePlayingIdx] || "";
+            pageText = pageText.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+            if (!pageText) {
+                currentPagePlayingIdx++;
+                executeSpeech();
+                return;
+            }
+
+            document.getElementById('reading-status').innerText = `🔊 Sedang membaca Halaman ${currentPagePlayingIdx + 1}... "${pageText.substring(0, 60)}..."`;
+
+            utterance = new SpeechSynthesisUtterance(pageText);
             
             const selectedLang = document.getElementById('lang-select').value;
             utterance.lang = selectedLang;
@@ -310,21 +273,19 @@
                 utterance.voice = matchedVoice;
             }
 
-            // Pemicu Native Berantai yang Ringan
+            // Perpindahan halaman tunggal yang aman bagi memori internal browser seluler
             utterance.onend = () => {
                 if (!isPaused && !isUserSeeking) {
-                    currentChunkIdx++; 
-                    // Memberikan delay napas mikro 80ms untuk membersihkan antrean audio internal HP
-                    pauseTimeout = setTimeout(playChunkSequence, 80);
+                    currentPagePlayingIdx++;
+                    setTimeout(executeSpeech, 150);
                 }
             };
 
             utterance.onerror = (e) => {
-                console.warn("TTS Event Notice:", e.error);
                 if (e.error === 'interrupted') return;
                 if (!isPaused && !isUserSeeking) {
-                    currentChunkIdx++;
-                    pauseTimeout = setTimeout(playChunkSequence, 80);
+                    currentPagePlayingIdx++;
+                    setTimeout(executeSpeech, 150);
                 }
             };
 
@@ -332,33 +293,30 @@
         }
 
         function pauseSpeech() {
-            if (!isPaused) {
+            if (!isPaused && synth) {
                 isPaused = true;
-                clearTimeout(pauseTimeout);
-                if (synth) {
-                    synth.cancel();
-                }
-                document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
+                synth.pause();
+                document.getElementById('reading-status').innerText = "⏸️ Pembacaan dijeda (Paused)";
             }
         }
 
         function resumeSpeech() {
-            if (isPaused) {
+            if (isPaused && synth) {
                 isPaused = false;
-                document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
-                playChunkSequence();
+                document.getElementById('reading-status').innerText = `🔊 Melanjutkan Halaman ${currentPagePlayingIdx + 1}...`;
+                if (synth.paused) {
+                    synth.resume();
+                } else {
+                    executeSpeech();
+                }
             }
         }
 
         function setSpeed(speed) {
             currentSpeed = speed;
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
-            
-            if (synth.speaking && !isPaused) {
-                cleanSpeechControl();
-                setTimeout(() => {
-                    playChunkSequence(); 
-                }, 150);
+            if (synth && synth.speaking && !isPaused) {
+                executeSpeech();
             }
         }
 
@@ -368,7 +326,7 @@
             
             const totalToDownload = (endPage - startPage) + 1;
             if (totalToDownload > 25) {
-                return alert(`⚠️ Batas maksimal pengunduhan sekali jalan adalah 25 halaman.`);
+                return alert(`⚠️ Batas maksimal pengunduhan teks sekali jalan adalah 25 halaman.`);
             }
 
             const downloadBtn = document.getElementById('btn-download');
@@ -379,7 +337,7 @@
                 let txtContent = `--- SUARA BUKU TEKS EKSTRAKSI (HALAMAN ${startPage} - ${endPage}) ---\n\n`;
                 for (let i = startPage - 1; i < endPage; i++) {
                     if (extractedPagesText[i]) {
-                        txtContent += `[HALAMAN ${i + 1}]\n${extractedPagesText[i]}\n\n`;
+                        txtContent += `[HALAMAN ${i + 1}]\n${extractedPagesText[i].trim()}\n\n`;
                     }
                 }
 
@@ -403,7 +361,9 @@
         function backToUpload() {
             isPaused = false;
             isUserSeeking = false;
-            cleanSpeechControl();
+            if(synth) {
+                synth.cancel();
+            }
             document.getElementById('upload-section').classList.remove('hidden');
             document.getElementById('control-section').classList.add('hidden');
             document.getElementById('audio-player').classList.add('hidden');
@@ -412,7 +372,7 @@
         }
 
         function refreshApp() {
-            cleanSpeechControl();
+            if(synth) synth.cancel();
             location.reload();
         }
     </script>
