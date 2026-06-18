@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Membuka Halaman...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .animate-pulse-slow { animation: pulse-slow 2s infinite; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-6 text-center">
+
+    <div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 max-w-sm shadow-2xl space-y-6">
+        <div class="flex justify-center items-center space-x-2 animate-pulse-slow">
+            <div class="w-4 h-4 bg-indigo-500 rounded-full"></div>
+            <div class="w-4 h-4 bg-purple-500 rounded-full"></div>
+            <div class="w-4 h-4 bg-pink-500 rounded-full"></div>
+        </div>
+
+        <h2 class="text-xl font-bold text-indigo-400">Mengalihkan ke Browser Utama...</h2>
+        <p class="text-sm text-slate-400 leading-relaxed">
+            Mohon tunggu sebentar, sistem sedang memindahkan Anda ke browser bawaan HP (Chrome/Safari) agar fitur pembaca suara dapat berjalan optimal.
+        </p>
+
+        <div class="border-t border-slate-800 pt-4">
+            <p class="text-xs text-slate-500 mb-3">Jika halaman tidak berpindah otomatis dalam 3 detik, klik tombol di bawah:</p>
+            <a id="fallback-link" class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg" href="https://mspramono.github.io/msp-suite/index.html">
+                Buka Aplikasi Sekarang
+            </a>
+        </div>
+
+        <div id="ios-instruction" class="hidden bg-slate-950 p-4 rounded-xl text-left border border-slate-800 space-y-2 text-xs">
+            <p class="font-semibold text-amber-400 text-center text-sm mb-1">⚠️ Pengguna iPhone / iOS:</p>
+            <p>1. Ketuk ikon <b>Titik Tiga (...)</b> di pojok kanan atas browser Instagram Anda.</p>
+            <p>2. Pilih menu <b>"Buka di Browser"</b> atau <b>"Open in Safari"</b>.</p>
+        </div>
+    </div>
+
+    <script>
+        // 1. URL Tujuan Akhir (Aplikasi utama Anda)
+        const targetUrl = "https://mspramono.github.io/msp-suite/index.html";
+        
+        // 2. Skema Intent khusus Android untuk memaksa buka di Google Chrome asli
+        const androidIntent = "intent://mspramono.github.io/msp-suite/index.html#Intent;scheme=https;package=com.android.chrome;action=android.intent.action.VIEW;end;";
+
+        // 3. Deteksi User Agent Browser
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        const isInstagram = userAgent.indexOf("Instagram") > -1 || userAgent.indexOf("FBAN") > -1 || userAgent.indexOf("FBAV") > -1;
+        const isAndroid = /Android/i.test(userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+
+        // Update link tombol fallback agar tetap valid ke index.html jika otomatisasi gagal
+        document.getElementById('fallback-link').href = targetUrl;
+
+        if (isInstagram) {
+            if (isAndroid) {
+                // Eksekusi paksa lempar ke Google Chrome Android secara instan
+                window.location.href = androidIntent;
+            } else if (isIOS) {
+                // Tampilkan instruksi manual untuk iOS karena Apple memblokir skema auto-intent aplikasi pihak ketiga
+                document.getElementById('ios-instruction').classList.remove('hidden');
+                // Trik memicu download palsu agar iOS memunculkan opsi open di Safari (opsional)
+                window.location.href = targetUrl + "?download=1"; 
+            }
+        } else {
+            // Jika diklik di luar Instagram (misal dari Chrome, WhatsApp, dll), langsung bypass ke aplikasi utama
+            window.location.href = targetUrl;
+        }
+    </script>
+</body>
+</html>
