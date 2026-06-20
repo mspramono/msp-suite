@@ -97,8 +97,6 @@
         </div>
     </div>
 
-    <audio id="undangan-digital-music" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGFtZTMuMTAwYXVkaW9maWxlK0AAAAAAAAAAAAAA//MUxAAAAAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxAsAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxBMAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxBcAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA"></audio>
-
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
@@ -109,10 +107,12 @@
         let currentPagePlayingIdx = 0;
         let isUserSeeking = false;
         let isPaused = false;
+        let isChangingState = false; 
         
         let textChunks = [];
         let currentChunkIdx = 0;
-        let nativeMusicPlayer = document.getElementById('undangan-digital-music');
+        let pauseTimeout = null;
+        let silentAudioPlayer = null;
 
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
@@ -122,14 +122,49 @@
         initVoices();
         window.speechSynthesis.onvoiceschanged = initVoices;
 
+        // Fungsi pemicu audio background agar sistem mobile mengizinkan tab tetap berjalan di latar belakang
+        function keepAudioAlive() {
+            if (!silentAudioPlayer) {
+                // Menggunakan base64 audio hening berdurasi 1 detik berputar terus menerus
+                silentAudioPlayer = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+                silentAudioPlayer.loop = true;
+            }
+            silentAudioPlayer.play().catch(e => console.log("Latar belakang aktif via audio loop."));
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "playing";
+                navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+                navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
+            }
+        }
+
+        function stopAudioAlive() {
+            if (silentAudioPlayer) {
+                silentAudioPlayer.pause();
+            }
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "paused";
+            }
+        }
+
+        // FUNGSI MEGA RESET: Menghancurkan seluruh sisa antrean lama beserta callback-nya agar Chrome tidak crash
         function megaResetChromeSpeech() {
-            nativeMusicPlayer.pause();
+            clearTimeout(pauseTimeout);
+            stopAudioAlive();
+            
+            // Putus total hubungan callback lama agar tidak menembakkan perintah liar saat di-cancel
             if (utterance) {
                 utterance.onend = null;
                 utterance.onerror = null;
                 utterance = null;
             }
+            
             if (synth) {
+                synth.cancel();
+                // Trik microtask ganda memaksa Chrome membersihkan buffer memori audio internalnya
+                if (synth.paused) {
+                    synth.resume();
+                }
                 synth.cancel();
             }
         }
@@ -209,57 +244,68 @@
 
         function seekToPage(pageValue) {
             isUserSeeking = true;
+            isChangingState = true; 
+            
             currentPagePlayingIdx = parseInt(pageValue) - 1;
-            currentChunkIdx = 0;
+            currentChunkIdx = 0; // Reset total indeks ke awal kalimat halaman baru
+            
             megaResetChromeSpeech();
-            isPaused = false;
-            isUserSeeking = false;
-            preparePageChunks();
-            playChunkSequence();
+            
+            // Jeda aman 350ms menjamin Chrome sudah menghapus antrean lama dari memorinya sebelum memutar halaman baru
+            setTimeout(() => {
+                isChangingState = false;
+                isPaused = false;
+                isUserSeeking = false;
+                preparePageChunks();
+                playChunkSequence();
+            }, 350); 
         }
 
         async function startReading() {
             megaResetChromeSpeech();
             isPaused = false;
+            isChangingState = false;
             isUserSeeking = false;
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
             currentChunkIdx = 0;
 
             document.getElementById('audio-player').classList.remove('hidden');
+
             preparePageChunks();
             playChunkSequence();
         }
 
-        // POTONG KALIMAT SECARA AMAN (Maksimal 200 Karakter agar Mesin Samsung TTS Tidak Hang)
         function preparePageChunks() {
             let rawText = extractedPagesText[currentPagePlayingIdx] || "";
             textChunks = [];
 
-            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
-            sentences.forEach(sentence => {
-                let trimmed = sentence.trim();
-                if (trimmed.length > 0) {
-                    if (trimmed.length > 180) {
-                        let words = trimmed.split(' ');
-                        let subChunk = "";
-                        words.forEach(word => {
-                            if ((subChunk + word).length > 180) {
-                                textChunks.push(subChunk.trim());
-                                subChunk = word + " ";
-                            } else {
-                                subChunk += word + " ";
-                            }
-                        });
-                        if (subChunk.trim()) textChunks.push(subChunk.trim());
-                    } else {
-                        textChunks.push(trimmed);
+            let lines = rawText.split(/\n+/);
+            lines.forEach(line => {
+                if (!line.trim()) return;
+                
+                let segments = line.match(/[^,.;?!]+[,.;?!]?/g) || [line];
+                
+                segments.forEach(segment => {
+                    let trimmed = segment.trim();
+                    if (!trimmed) return;
+                    
+                    let lastChar = trimmed.slice(-1);
+                    let type = "titik"; 
+                    
+                    if (lastChar === ',' || lastChar === ';') {
+                        type = "koma"; 
                     }
-                }
+
+                    textChunks.push({
+                        text: trimmed,
+                        type: type
+                    });
+                });
             });
         }
 
         function playChunkSequence() {
-            if (isPaused) return;
+            if (isPaused || isChangingState) return;
 
             const endPage = parseInt(document.getElementById('end-page').value) - 1;
             
@@ -269,7 +315,7 @@
                 
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    megaResetChromeSpeech();
+                    stopAudioAlive();
                     return;
                 }
                 preparePageChunks();
@@ -278,78 +324,73 @@
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            let currentText = textChunks[currentChunkIdx];
-            if (!currentText || !currentText.trim()) {
-                currentChunkIdx++;
-                playChunkSequence();
-                return;
+            let currentItem = textChunks[currentChunkIdx];
+            if (!currentItem) return;
+
+            document.getElementById('reading-status').innerText = `🔊 Sedang membacakan: Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length})`;
+
+            utterance = new SpeechSynthesisUtterance(currentItem.text);
+            
+            const selectedLang = document.getElementById('lang-select').value;
+            utterance.lang = selectedLang;
+            utterance.rate = currentSpeed;
+
+            // Pencarian suara yang dioptimalkan untuk mobile browser
+            const voices = synth.getVoices();
+            if (selectedLang === "id-ID") {
+                let idVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('id'));
+                if (idVoice) {
+                    utterance.voice = idVoice;
+                }
+            } else {
+                let enVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en'));
+                if (enVoice) utterance.voice = enVoice;
             }
 
-            document.getElementById('reading-status').innerText = `🔊 Membaca: Hal ${currentPagePlayingIdx + 1} (Bagian ${currentChunkIdx + 1}/${textChunks.length})`;
+            // Aktifkan penjaga latar belakang sesaat sebelum suara berbunyi
+            keepAudioAlive();
 
-            // Trik Undangan Digital: Putar audio asli 1 detik di latar belakang tepat sebelum robot berbicara
-            nativeMusicPlayer.play().then(() => {
-                
-                utterance = new SpeechSynthesisUtterance(currentText);
-                const selectedLang = document.getElementById('lang-select').value;
-                utterance.lang = selectedLang;
-                utterance.rate = currentSpeed;
+            utterance.onend = () => {
+                if (isChangingState || isUserSeeking) return;
 
-                // Lock bahasa Indonesia untuk Samsung S9+
-                const voices = synth.getVoices();
-                let idVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
-                if (selectedLang.startsWith("id") && idVoice) {
-                    utterance.voice = idVoice;
-                } else {
-                    let enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
-                    if (enVoice) utterance.voice = enVoice;
+                if (!isPaused) {
+                    currentChunkIdx++; 
+                    let delay = (currentItem.type === "koma") ? 5 : 50;
+                    let adjustedDelay = delay / currentSpeed;
+                    
+                    pauseTimeout = setTimeout(playChunkSequence, adjustedDelay);
                 }
+            };
 
-                utterance.onend = () => {
-                    if (isUserSeeking || isPaused) return;
+            utterance.onerror = (e) => {
+                if (!isChangingState && !isPaused && !isUserSeeking) {
                     currentChunkIdx++;
                     playChunkSequence();
-                };
-
-                utterance.onerror = (e) => {
-                    console.log("TTS Terpotong, dipaksa lanjut:", e);
-                    if (isUserSeeking || isPaused) return;
-                    currentChunkIdx++;
-                    playChunkSequence();
-                };
-
-                synth.speak(utterance);
-
-                // Media Control Notifikasi Android Samsung
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = "playing";
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: `Halaman ${currentPagePlayingIdx + 1} - Bagian ${currentChunkIdx + 1}`,
-                        artist: "SuaraBuku Pemutar Buku",
-                        album: "Mode Latar Belakang Aktif"
-                    });
-                    navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
-                    navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
                 }
+            };
 
-            }).catch(e => {
-                // Fail-safe jika browser nge-block play audio
-                currentChunkIdx++;
-                playChunkSequence();
-            });
+            synth.speak(utterance);
         }
 
         function pauseSpeech() {
-            isPaused = true;
-            nativeMusicPlayer.pause();
-            if (synth) synth.cancel();
-            document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+            if (synth.speaking && !isPaused) {
+                isPaused = true;
+                clearTimeout(pauseTimeout);
+                stopAudioAlive();
+                if (utterance) {
+                    utterance.onend = null;
+                    utterance.onerror = null;
+                }
+                synth.cancel();
+                document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
+            }
         }
 
         function resumeSpeech() {
             if (isPaused) {
                 isPaused = false;
+                document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
+                keepAudioAlive();
                 playChunkSequence();
             }
         }
@@ -357,12 +398,20 @@
         function setSpeed(speed) {
             currentSpeed = speed;
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
+            
             if (synth.speaking && !isPaused) {
+                isChangingState = true; 
                 megaResetChromeSpeech();
-                playChunkSequence();
+                
+                // Berikan jeda rilis state antrean lama 250ms sebelum memutar dengan kecepatan baru
+                setTimeout(() => {
+                    isChangingState = false;
+                    playChunkSequence(); 
+                }, 250);
             }
         }
 
+        // PERBAIKAN DOWNLOAD: Mengunduh file teks narasi bersih instan, bebas loading dan bebas dengung robot
         function downloadFullAudioRange() {
             const startPage = parseInt(document.getElementById('start-page').value) || 1;
             const endPage = parseInt(document.getElementById('end-page').value) || extractedPagesText.length;
@@ -392,7 +441,7 @@
                 a.click();
                 URL.revokeObjectURL(url);
 
-                alert("✔️ File Teks Narasi Berhasil Terunduh Sempurna!");
+                alert("✔️ File Teks Narasi Berhasil Terunduh Sempurna Tanpa Dengung!");
             } catch (err) {
                 alert("Gagal mendownload: " + err.message);
             } finally {
@@ -403,6 +452,7 @@
 
         function backToUpload() {
             isPaused = false;
+            isChangingState = false;
             isUserSeeking = false;
             megaResetChromeSpeech();
             document.getElementById('upload-section').classList.remove('hidden');
