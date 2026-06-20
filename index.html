@@ -97,7 +97,7 @@
         </div>
     </div>
 
-    <audio id="undangan-digital-trick" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="></audio>
+    <audio id="undangan-digital-music" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGFtZTMuMTAwYXVkaW9maWxlK0AAAAAAAAAAAAAA//MUxAAAAAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxAsAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxBMAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA//MUxBcAAA0gAAAAAAVXNlci0AAGUAAAAGAAAA"></audio>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
@@ -109,7 +109,10 @@
         let currentPagePlayingIdx = 0;
         let isUserSeeking = false;
         let isPaused = false;
-        let bgAudioTrick = document.getElementById('undangan-digital-trick');
+        
+        let textChunks = [];
+        let currentChunkIdx = 0;
+        let nativeMusicPlayer = document.getElementById('undangan-digital-music');
 
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
@@ -120,7 +123,7 @@
         window.speechSynthesis.onvoiceschanged = initVoices;
 
         function megaResetChromeSpeech() {
-            bgAudioTrick.pause();
+            nativeMusicPlayer.pause();
             if (utterance) {
                 utterance.onend = null;
                 utterance.onerror = null;
@@ -168,7 +171,7 @@
                     const arrayBuffer = await file.arrayBuffer();
                     const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
                     const fullText = result.value;
-                    const chunks = fullText.match(/[\s\S]{1,1500}/g) || [fullText];
+                    const chunks = fullText.match(/[\s\S]{1,1200}/g) || [fullText];
                     extractedPagesText = chunks;
                 }
 
@@ -207,10 +210,12 @@
         function seekToPage(pageValue) {
             isUserSeeking = true;
             currentPagePlayingIdx = parseInt(pageValue) - 1;
+            currentChunkIdx = 0;
             megaResetChromeSpeech();
             isPaused = false;
             isUserSeeking = false;
-            playWholePageAtOnce();
+            preparePageChunks();
+            playChunkSequence();
         }
 
         async function startReading() {
@@ -218,86 +223,125 @@
             isPaused = false;
             isUserSeeking = false;
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
+            currentChunkIdx = 0;
 
             document.getElementById('audio-player').classList.remove('hidden');
-            playWholePageAtOnce();
+            preparePageChunks();
+            playChunkSequence();
         }
 
-        // METODE UTUH SATU HALAMAN: Kirim satu halaman sekaligus agar tereksekusi penuh di latar belakang
-        function playWholePageAtOnce() {
+        // POTONG KALIMAT SECARA AMAN (Maksimal 200 Karakter agar Mesin Samsung TTS Tidak Hang)
+        function preparePageChunks() {
+            let rawText = extractedPagesText[currentPagePlayingIdx] || "";
+            textChunks = [];
+
+            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
+            sentences.forEach(sentence => {
+                let trimmed = sentence.trim();
+                if (trimmed.length > 0) {
+                    if (trimmed.length > 180) {
+                        let words = trimmed.split(' ');
+                        let subChunk = "";
+                        words.forEach(word => {
+                            if ((subChunk + word).length > 180) {
+                                textChunks.push(subChunk.trim());
+                                subChunk = word + " ";
+                            } else {
+                                subChunk += word + " ";
+                            }
+                        });
+                        if (subChunk.trim()) textChunks.push(subChunk.trim());
+                    } else {
+                        textChunks.push(trimmed);
+                    }
+                }
+            });
+        }
+
+        function playChunkSequence() {
             if (isPaused) return;
 
             const endPage = parseInt(document.getElementById('end-page').value) - 1;
-            if (currentPagePlayingIdx > endPage) {
-                document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                megaResetChromeSpeech();
-                return;
+            
+            if (currentChunkIdx >= textChunks.length) {
+                currentPagePlayingIdx++;
+                currentChunkIdx = 0; 
+                
+                if (currentPagePlayingIdx > endPage) {
+                    document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
+                    megaResetChromeSpeech();
+                    return;
+                }
+                preparePageChunks();
             }
 
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            let pageText = extractedPagesText[currentPagePlayingIdx] || "";
-            if (!pageText.trim()) {
-                currentPagePlayingIdx++;
-                playWholePageAtOnce();
+            let currentText = textChunks[currentChunkIdx];
+            if (!currentText || !currentText.trim()) {
+                currentChunkIdx++;
+                playChunkSequence();
                 return;
             }
 
-            document.getElementById('reading-status').innerText = `🔊 Membaca Halaman ${currentPagePlayingIdx + 1}...`;
+            document.getElementById('reading-status').innerText = `🔊 Membaca: Hal ${currentPagePlayingIdx + 1} (Bagian ${currentChunkIdx + 1}/${textChunks.length})`;
 
-            // Aktifkan trik pemutar musik undangan digital agar sistem Android menaruh perhatian pada Chrome
-            bgAudioTrick.play().catch(() => {});
+            // Trik Undangan Digital: Putar audio asli 1 detik di latar belakang tepat sebelum robot berbicara
+            nativeMusicPlayer.play().then(() => {
+                
+                utterance = new SpeechSynthesisUtterance(currentText);
+                const selectedLang = document.getElementById('lang-select').value;
+                utterance.lang = selectedLang;
+                utterance.rate = currentSpeed;
 
-            // Buat pembacaan satu halaman penuh tanpa dipotong-potong kalimatnya
-            utterance = new SpeechSynthesisUtterance(pageText);
-            const selectedLang = document.getElementById('lang-select').value;
-            utterance.lang = selectedLang;
-            utterance.rate = currentSpeed;
+                // Lock bahasa Indonesia untuk Samsung S9+
+                const voices = synth.getVoices();
+                let idVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
+                if (selectedLang.startsWith("id") && idVoice) {
+                    utterance.voice = idVoice;
+                } else {
+                    let enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+                    if (enVoice) utterance.voice = enVoice;
+                }
 
-            // Kunci pencarian bahasa Indonesia case-insensitive khusus Chrome Samsung
-            const voices = synth.getVoices();
-            let idVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
-            if (selectedLang.startsWith("id") && idVoice) {
-                utterance.voice = idVoice;
-            } else {
-                let enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
-                if (enVoice) utterance.voice = enVoice;
-            }
+                utterance.onend = () => {
+                    if (isUserSeeking || isPaused) return;
+                    currentChunkIdx++;
+                    playChunkSequence();
+                };
 
-            // Ketika satu halaman utuh ini selesai dibaca
-            utterance.onend = () => {
-                if (isUserSeeking || isPaused) return;
-                currentPagePlayingIdx++;
-                playWholePageAtOnce();
-            };
+                utterance.onerror = (e) => {
+                    console.log("TTS Terpotong, dipaksa lanjut:", e);
+                    if (isUserSeeking || isPaused) return;
+                    currentChunkIdx++;
+                    playChunkSequence();
+                };
 
-            // Proteksi jika Android memotong paksa di tengah jalan karena layar mati, paksa lompat halaman berikutnya
-            utterance.onerror = (e) => {
-                console.log("Sistem memotong/error:", e);
-                if (isUserSeeking || isPaused) return;
-                currentPagePlayingIdx++;
-                playWholePageAtOnce();
-            };
+                synth.speak(utterance);
 
-            synth.speak(utterance);
+                // Media Control Notifikasi Android Samsung
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = "playing";
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: `Halaman ${currentPagePlayingIdx + 1} - Bagian ${currentChunkIdx + 1}`,
+                        artist: "SuaraBuku Pemutar Buku",
+                        album: "Mode Latar Belakang Aktif"
+                    });
+                    navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+                    navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
+                }
 
-            // Munculkan panel audio kontrol di laci notifikasi Samsung S9 Plus Anda
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "playing";
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: `Membaca Halaman ${currentPagePlayingIdx + 1}`,
-                    artist: "SuaraBuku App",
-                    album: "Latar Belakang OneUI Dijaga"
-                });
-                navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
-                navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
-            }
+            }).catch(e => {
+                // Fail-safe jika browser nge-block play audio
+                currentChunkIdx++;
+                playChunkSequence();
+            });
         }
 
         function pauseSpeech() {
             isPaused = true;
-            bgAudioTrick.pause();
+            nativeMusicPlayer.pause();
             if (synth) synth.cancel();
             document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
@@ -306,7 +350,7 @@
         function resumeSpeech() {
             if (isPaused) {
                 isPaused = false;
-                playWholePageAtOnce();
+                playChunkSequence();
             }
         }
 
@@ -315,7 +359,7 @@
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
             if (synth.speaking && !isPaused) {
                 megaResetChromeSpeech();
-                playWholePageAtOnce();
+                playChunkSequence();
             }
         }
 
