@@ -54,8 +54,8 @@
             <div>
                 <label class="block text-xs font-semibold text-slate-400 mb-1">Bahasa Voice Over:</label>
                 <select id="lang-select" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
-                    <option value="id-ID">Bahasa Indonesia</option>
-                    <option value="en-US">English (US)</option>
+                    <option value="id">Bahasa Indonesia</option>
+                    <option value="en">English (US)</option>
                 </select>
             </div>
 
@@ -97,75 +97,44 @@
         </div>
     </div>
 
-    <audio id="bg-silent-player" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="></audio>
+    <audio id="native-audio-player" style="display:none;"></audio>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         let extractedPagesText = []; 
-        let synth = window.speechSynthesis;
-        let utterance = null;
         let currentSpeed = 1;
         let currentPagePlayingIdx = 0;
         let isUserSeeking = false;
         let isPaused = false;
-        let isChangingState = false; 
         
         let textChunks = [];
         let currentChunkIdx = 0;
-        let pauseTimeout = null;
+        let nativeAudio = document.getElementById('native-audio-player');
 
-        function initVoices() {
-            if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
-                synth.getVoices();
-            }
-        }
-        initVoices();
-        window.speechSynthesis.onvoiceschanged = initVoices;
+        // Setup Event Listener pada Audio Player Asli
+        nativeAudio.onended = () => {
+            if (isUserSeeking || isPaused) return;
+            currentChunkIdx++;
+            playChunkSequence();
+        };
 
-        // Fungsi pemicu Audio Latar Belakang mirip Undangan Digital
-        function triggerBackgroundAudio(play) {
-            const audioEl = document.getElementById('bg-silent-player');
-            if (play) {
-                audioEl.play().catch(e => console.log("Audio background aktif."));
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = "playing";
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: "📖 Mode Membaca Buku Aktif",
-                        artist: "SuaraBuku",
-                        album: "Audio Latar Belakang"
-                    });
-                    navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
-                    navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
-                }
-            } else {
-                audioEl.pause();
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = "paused";
-                }
-            }
+        nativeAudio.onerror = () => {
+            if (isUserSeeking || isPaused) return;
+            // Jika audio error/gagal load, skip ke kalimat berikutnya agar tidak macet
+            currentChunkIdx++;
+            playChunkSequence();
+        };
+
+        // Sinkronisasi dengan tombol notifikasi bawaan HP (Media Session API)
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+            navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
         }
 
-        // FUNGSI MEGA RESET: Menghancurkan seluruh sisa antrean lama beserta callback-nya agar Chrome tidak crash
         function megaResetChromeSpeech() {
-            clearTimeout(pauseTimeout);
-            triggerBackgroundAudio(false);
-            
-            // Putus total hubungan callback lama agar tidak menembakkan perintah liar saat di-cancel
-            if (utterance) {
-                utterance.onend = null;
-                utterance.onerror = null;
-                utterance = null;
-            }
-            
-            if (synth) {
-                synth.cancel();
-                // Trik microtask ganda memaksa Chrome membersihkan buffer memori audio internalnya
-                if (synth.paused) {
-                    synth.resume();
-                }
-                synth.cancel();
-            }
+            nativeAudio.pause();
+            nativeAudio.src = "";
         }
 
         document.getElementById('file-input').addEventListener('change', function(e) {
@@ -183,7 +152,7 @@
             if (!file) return alert("Silakan pilih file terlebih dahulu!");
 
             const btnText = document.getElementById('btn-text');
-            btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu... (Lokal)";
+            btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu...";
             document.getElementById('btn-process').disabled = true;
 
             extractedPagesText = [];
@@ -243,27 +212,20 @@
 
         function seekToPage(pageValue) {
             isUserSeeking = true;
-            isChangingState = true; 
-            
             currentPagePlayingIdx = parseInt(pageValue) - 1;
-            currentChunkIdx = 0; // Reset total indeks ke awal kalimat halaman baru
+            currentChunkIdx = 0; 
             
             megaResetChromeSpeech();
             
-            // Jeda aman 350ms menjamin Chrome sudah menghapus antrean lama dari memorinya sebelum memutar halaman baru
-            setTimeout(() => {
-                isChangingState = false;
-                isPaused = false;
-                isUserSeeking = false;
-                preparePageChunks();
-                playChunkSequence();
-            }, 350); 
+            isPaused = false;
+            isUserSeeking = false;
+            preparePageChunks();
+            playChunkSequence();
         }
 
         async function startReading() {
             megaResetChromeSpeech();
             isPaused = false;
-            isChangingState = false;
             isUserSeeking = false;
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
             currentChunkIdx = 0;
@@ -278,33 +240,33 @@
             let rawText = extractedPagesText[currentPagePlayingIdx] || "";
             textChunks = [];
 
-            let lines = rawText.split(/\n+/);
-            lines.forEach(line => {
-                if (!line.trim()) return;
-                
-                let segments = line.match(/[^,.;?!]+[,.;?!]?/g) || [line];
-                
-                segments.forEach(segment => {
-                    let trimmed = segment.trim();
-                    if (!trimmed) return;
-                    
-                    let lastChar = trimmed.slice(-1);
-                    let type = "titik"; 
-                    
-                    if (lastChar === ',' || lastChar === ';') {
-                        type = "koma"; 
+            // Memisahkan teks berdasarkan baris dan kalimat agar tidak melebihi limit panjang karakter API
+            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
+            sentences.forEach(sentence => {
+                let trimmed = sentence.trim();
+                if (trimmed.length > 0) {
+                    // Jika kalimat terlalu panjang (>150 karakter), potong per kata agar stabil di API
+                    if (trimmed.length > 150) {
+                        let words = trimmed.split(' ');
+                        let subChunk = "";
+                        words.forEach(word => {
+                            if ((subChunk + word).length > 150) {
+                                textChunks.push(subChunk.trim());
+                                subChunk = word + " ";
+                            } else {
+                                subChunk += word + " ";
+                            }
+                        });
+                        if (subChunk.trim()) textChunks.push(subChunk.trim());
+                    } else {
+                        textChunks.push(trimmed);
                     }
-
-                    textChunks.push({
-                        text: trimmed,
-                        type: type
-                    });
-                });
+                }
             });
         }
 
         function playChunkSequence() {
-            if (isPaused || isChangingState) return;
+            if (isPaused) return;
 
             const endPage = parseInt(document.getElementById('end-page').value) - 1;
             
@@ -314,7 +276,7 @@
                 
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    triggerBackgroundAudio(false);
+                    megaResetChromeSpeech();
                     return;
                 }
                 preparePageChunks();
@@ -323,70 +285,39 @@
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            let currentItem = textChunks[currentChunkIdx];
-            if (!currentItem) return;
+            let currentText = textChunks[currentChunkIdx];
+            if (!currentText) return;
 
             document.getElementById('reading-status').innerText = `🔊 Sedang membacakan: Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length})`;
 
-            // Jalankan manipulasi audio undangan digital tepat sebelum robot bersuara
-            triggerBackgroundAudio(true);
-
-            utterance = new SpeechSynthesisUtterance(currentItem.text);
-            
             const selectedLang = document.getElementById('lang-select').value;
-            utterance.lang = selectedLang;
-            utterance.rate = currentSpeed;
+            
+            // GENERATOR AUDIO AUDIO ASLI (Google TTS Engine) - PASTI BAHASA INDONESIA RESMI JERNIH
+            let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(currentText)}`;
+            
+            nativeAudio.src = ttsUrl;
+            nativeAudio.playbackRate = currentSpeed;
+            
+            // Putar audio asli secara paksa
+            nativeAudio.play().catch(e => console.log("Playback interrupted"));
 
-            // PERBAIKAN TOTAL BAHASA: Abaikan huruf kapital besar/kecil dari pelaporan Android Chrome
-            const voices = synth.getVoices();
-            if (selectedLang === "id-ID") {
-                let edgeVoice = voices.find(v => v.name && v.name.includes("Natural") && v.lang && v.lang.toLowerCase().startsWith("id"));
-                let localVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
-                
-                if (edgeVoice) {
-                    utterance.voice = edgeVoice;
-                } else if (localVoice) {
-                    utterance.voice = localVoice;
-                }
-            } else {
-                let englishVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
-                if (englishVoice) utterance.voice = englishVoice;
+            // Tampilkan kontrol audio di tray HP agar persis seperti pemutar musik
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "playing";
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: `Halaman ${currentPagePlayingIdx + 1} - Kalimat ${currentChunkIdx + 1}`,
+                    artist: "SuaraBuku Pemutar Audio",
+                    album: "Pemutar Latar Belakang Aktif"
+                });
             }
-
-            utterance.onend = () => {
-                if (isChangingState || isUserSeeking) return;
-
-                if (!isPaused) {
-                    currentChunkIdx++; 
-                    let delay = (currentItem.type === "koma") ? 5 : 50;
-                    let adjustedDelay = delay / currentSpeed;
-                    
-                    pauseTimeout = setTimeout(playChunkSequence, adjustedDelay);
-                }
-            };
-
-            utterance.onerror = (e) => {
-                // Mencegah macet total saat layar mati di beberapa vendor HP
-                if (!isChangingState && !isPaused && !isUserSeeking) {
-                    currentChunkIdx++;
-                    playChunkSequence();
-                }
-            };
-
-            synth.speak(utterance);
         }
 
         function pauseSpeech() {
-            if (synth.speaking && !isPaused) {
-                isPaused = true;
-                clearTimeout(pauseTimeout);
-                triggerBackgroundAudio(false);
-                if (utterance) {
-                    utterance.onend = null;
-                    utterance.onerror = null;
-                }
-                synth.cancel();
-                document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
+            isPaused = true;
+            nativeAudio.pause();
+            document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "paused";
             }
         }
 
@@ -394,24 +325,21 @@
             if (isPaused) {
                 isPaused = false;
                 document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
-                triggerBackgroundAudio(true);
-                playChunkSequence();
+                if (nativeAudio.src) {
+                    nativeAudio.play().catch(e => console.log("Playback interrupted"));
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.playbackState = "playing";
+                    }
+                } else {
+                    playChunkSequence();
+                }
             }
         }
 
         function setSpeed(speed) {
             currentSpeed = speed;
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
-            
-            if (synth.speaking && !isPaused) {
-                isChangingState = true; 
-                megaResetChromeSpeech();
-                
-                setTimeout(() => {
-                    isChangingState = false;
-                    playChunkSequence(); 
-                }, 250);
-            }
+            nativeAudio.playbackRate = speed;
         }
 
         function downloadFullAudioRange() {
@@ -454,7 +382,6 @@
 
         function backToUpload() {
             isPaused = false;
-            isChangingState = false;
             isUserSeeking = false;
             megaResetChromeSpeech();
             document.getElementById('upload-section').classList.remove('hidden');
