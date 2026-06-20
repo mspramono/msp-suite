@@ -54,8 +54,8 @@
             <div>
                 <label class="block text-xs font-semibold text-slate-400 mb-1">Bahasa Voice Over:</label>
                 <select id="lang-select" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
-                    <option value="id">Bahasa Indonesia</option>
-                    <option value="en">English (US)</option>
+                    <option value="id-ID">Bahasa Indonesia</option>
+                    <option value="en-US">English (US)</option>
                 </select>
             </div>
 
@@ -97,61 +97,38 @@
         </div>
     </div>
 
-    <audio id="native-audio-player" style="display:none;"></audio>
+    <audio id="undangan-digital-trick" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="></audio>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         let extractedPagesText = []; 
+        let synth = window.speechSynthesis;
+        let utterance = null;
         let currentSpeed = 1;
         let currentPagePlayingIdx = 0;
         let isUserSeeking = false;
         let isPaused = false;
-        
-        let audioQueue = [];
-        let currentQueueIdx = 0;
-        let nativeAudio = document.getElementById('native-audio-player');
+        let bgAudioTrick = document.getElementById('undangan-digital-trick');
 
-        // Menggunakan AudioContext internal untuk memicu WakeLock Audio (Trik Latar Belakang Mutlak)
-        let backgroundWakeContext = null;
-
-        function triggerWakeAudio() {
-            if (!backgroundWakeContext) {
-                backgroundWakeContext = new (window.AudioContext || window.webkitAudioContext)();
-                let osc = backgroundWakeContext.createOscillator();
-                let gain = backgroundWakeContext.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = 0; // Hening total
-                gain.gain.value = 0.01;
-                osc.connect(gain);
-                gain.connect(backgroundWakeContext.destination);
-                osc.start(0);
-            } else if (backgroundWakeContext.state === 'suspended') {
-                backgroundWakeContext.resume();
+        function initVoices() {
+            if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+                synth.getVoices();
             }
         }
-
-        nativeAudio.onended = () => {
-            if (isUserSeeking || isPaused) return;
-            currentQueueIdx++;
-            playNextInQueue();
-        };
-
-        nativeAudio.onerror = () => {
-            if (isUserSeeking || isPaused) return;
-            currentQueueIdx++;
-            playNextInQueue();
-        };
-
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
-            navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
-        }
+        initVoices();
+        window.speechSynthesis.onvoiceschanged = initVoices;
 
         function megaResetChromeSpeech() {
-            nativeAudio.pause();
-            nativeAudio.src = "";
-            audioQueue = [];
+            bgAudioTrick.pause();
+            if (utterance) {
+                utterance.onend = null;
+                utterance.onerror = null;
+                utterance = null;
+            }
+            if (synth) {
+                synth.cancel();
+            }
         }
 
         document.getElementById('file-input').addEventListener('change', function(e) {
@@ -191,7 +168,7 @@
                     const arrayBuffer = await file.arrayBuffer();
                     const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
                     const fullText = result.value;
-                    const chunks = fullText.match(/[\s\S]{1,1200}/g) || [fullText];
+                    const chunks = fullText.match(/[\s\S]{1,1500}/g) || [fullText];
                     extractedPagesText = chunks;
                 }
 
@@ -230,11 +207,10 @@
         function seekToPage(pageValue) {
             isUserSeeking = true;
             currentPagePlayingIdx = parseInt(pageValue) - 1;
-            
             megaResetChromeSpeech();
             isPaused = false;
             isUserSeeking = false;
-            preparePageAudioQueue();
+            playWholePageAtOnce();
         }
 
         async function startReading() {
@@ -244,124 +220,103 @@
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
 
             document.getElementById('audio-player').classList.remove('hidden');
-            preparePageAudioQueue();
+            playWholePageAtOnce();
         }
 
-        // MEMBUAT ANTREAN URL AUDIO HALAMAN TERPILIH SECARA UTUH KETIKA PLAY DIKLIK
-        function preparePageAudioQueue() {
-            triggerWakeAudio();
-            document.getElementById('reading-status').innerText = `⏳ Menyusun struktur audio Halaman ${currentPagePlayingIdx + 1}...`;
-
-            let rawText = extractedPagesText[currentPagePlayingIdx] || "";
-            audioQueue = [];
-            currentQueueIdx = 0;
-
-            let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
-            const selectedLang = document.getElementById('lang-select').value;
-
-            sentences.forEach(sentence => {
-                let trimmed = sentence.trim();
-                if (trimmed.length > 0) {
-                    if (trimmed.length > 150) {
-                        let words = trimmed.split(' ');
-                        let subChunk = "";
-                        words.forEach(word => {
-                            if ((subChunk + word).length > 150) {
-                                let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(subChunk.trim())}`;
-                                audioQueue.push({ url: ttsUrl, text: subChunk.trim() });
-                                subChunk = word + " ";
-                            } else {
-                                subChunk += word + " ";
-                            }
-                        });
-                        if (subChunk.trim()) {
-                            let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(subChunk.trim())}`;
-                            audioQueue.push({ url: ttsUrl, text: subChunk.trim() });
-                        }
-                    } else {
-                        let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(trimmed)}`;
-                        audioQueue.push({ url: ttsUrl, text: trimmed });
-                    }
-                }
-            });
-
-            if (audioQueue.length > 0) {
-                playNextInQueue();
-            } else {
-                // Jika halaman kosong, langsung lompat ke halaman selanjutnya
-                const endPage = parseInt(document.getElementById('end-page').value) - 1;
-                if (currentPagePlayingIdx < endPage) {
-                    currentPagePlayingIdx++;
-                    preparePageAudioQueue();
-                }
-            }
-        }
-
-        function playNextInQueue() {
+        // METODE UTUH SATU HALAMAN: Kirim satu halaman sekaligus agar tereksekusi penuh di latar belakang
+        function playWholePageAtOnce() {
             if (isPaused) return;
 
             const endPage = parseInt(document.getElementById('end-page').value) - 1;
-
-            if (currentQueueIdx >= audioQueue.length) {
-                currentPagePlayingIdx++;
-                if (currentPagePlayingIdx > endPage) {
-                    document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    megaResetChromeSpeech();
-                    return;
-                }
-                preparePageAudioQueue();
+            if (currentPagePlayingIdx > endPage) {
+                document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
+                megaResetChromeSpeech();
                 return;
             }
 
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            let currentItem = audioQueue[currentQueueIdx];
-            document.getElementById('reading-status').innerText = `🔊 Membaca: Halaman ${currentPagePlayingIdx + 1} (${currentQueueIdx + 1}/${audioQueue.length})`;
+            let pageText = extractedPagesText[currentPagePlayingIdx] || "";
+            if (!pageText.trim()) {
+                currentPagePlayingIdx++;
+                playWholePageAtOnce();
+                return;
+            }
 
-            nativeAudio.src = currentItem.url;
-            nativeAudio.playbackRate = currentSpeed;
-            nativeAudio.play().catch(e => console.log("Latar belakang terjaga otomatis."));
+            document.getElementById('reading-status').innerText = `🔊 Membaca Halaman ${currentPagePlayingIdx + 1}...`;
 
+            // Aktifkan trik pemutar musik undangan digital agar sistem Android menaruh perhatian pada Chrome
+            bgAudioTrick.play().catch(() => {});
+
+            // Buat pembacaan satu halaman penuh tanpa dipotong-potong kalimatnya
+            utterance = new SpeechSynthesisUtterance(pageText);
+            const selectedLang = document.getElementById('lang-select').value;
+            utterance.lang = selectedLang;
+            utterance.rate = currentSpeed;
+
+            // Kunci pencarian bahasa Indonesia case-insensitive khusus Chrome Samsung
+            const voices = synth.getVoices();
+            let idVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
+            if (selectedLang.startsWith("id") && idVoice) {
+                utterance.voice = idVoice;
+            } else {
+                let enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+                if (enVoice) utterance.voice = enVoice;
+            }
+
+            // Ketika satu halaman utuh ini selesai dibaca
+            utterance.onend = () => {
+                if (isUserSeeking || isPaused) return;
+                currentPagePlayingIdx++;
+                playWholePageAtOnce();
+            };
+
+            // Proteksi jika Android memotong paksa di tengah jalan karena layar mati, paksa lompat halaman berikutnya
+            utterance.onerror = (e) => {
+                console.log("Sistem memotong/error:", e);
+                if (isUserSeeking || isPaused) return;
+                currentPagePlayingIdx++;
+                playWholePageAtOnce();
+            };
+
+            synth.speak(utterance);
+
+            // Munculkan panel audio kontrol di laci notifikasi Samsung S9 Plus Anda
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.playbackState = "playing";
                 navigator.mediaSession.metadata = new MediaMetadata({
-                    title: `Halaman ${currentPagePlayingIdx + 1} - Bagian ${currentQueueIdx + 1}`,
-                    artist: "SuaraBuku Player",
-                    album: "Mode Latar Belakang Aktif"
+                    title: `Membaca Halaman ${currentPagePlayingIdx + 1}`,
+                    artist: "SuaraBuku App",
+                    album: "Latar Belakang OneUI Dijaga"
                 });
+                navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+                navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
             }
         }
 
         function pauseSpeech() {
             isPaused = true;
-            nativeAudio.pause();
+            bgAudioTrick.pause();
+            if (synth) synth.cancel();
             document.getElementById('reading-status').innerText = "⏸️ Pembacaan sedang dipause";
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "paused";
-            }
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
 
         function resumeSpeech() {
             if (isPaused) {
                 isPaused = false;
-                triggerWakeAudio();
-                document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
-                if (nativeAudio.src) {
-                    nativeAudio.play().catch(e => console.log("Playback resumed"));
-                    if ('mediaSession' in navigator) {
-                        navigator.mediaSession.playbackState = "playing";
-                    }
-                } else {
-                    playNextInQueue();
-                }
+                playWholePageAtOnce();
             }
         }
 
         function setSpeed(speed) {
             currentSpeed = speed;
             document.getElementById('speed-indicator').innerText = `(${speed}x)`;
-            nativeAudio.playbackRate = speed;
+            if (synth.speaking && !isPaused) {
+                megaResetChromeSpeech();
+                playWholePageAtOnce();
+            }
         }
 
         function downloadFullAudioRange() {
