@@ -112,6 +112,7 @@
         let textChunks = [];
         let currentChunkIdx = 0;
         let pauseTimeout = null;
+        let silentAudioPlayer = null;
 
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
@@ -121,9 +122,35 @@
         initVoices();
         window.speechSynthesis.onvoiceschanged = initVoices;
 
+        // Fungsi pemicu audio background agar sistem mobile mengizinkan tab tetap berjalan di latar belakang
+        function keepAudioAlive() {
+            if (!silentAudioPlayer) {
+                // Menggunakan base64 audio hening berdurasi 1 detik berputar terus menerus
+                silentAudioPlayer = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+                silentAudioPlayer.loop = true;
+            }
+            silentAudioPlayer.play().catch(e => console.log("Latar belakang aktif via audio loop."));
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "playing";
+                navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+                navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
+            }
+        }
+
+        function stopAudioAlive() {
+            if (silentAudioPlayer) {
+                silentAudioPlayer.pause();
+            }
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "paused";
+            }
+        }
+
         // FUNGSI MEGA RESET: Menghancurkan seluruh sisa antrean lama beserta callback-nya agar Chrome tidak crash
         function megaResetChromeSpeech() {
             clearTimeout(pauseTimeout);
+            stopAudioAlive();
             
             // Putus total hubungan callback lama agar tidak menembakkan perintah liar saat di-cancel
             if (utterance) {
@@ -288,6 +315,7 @@
                 
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
+                    stopAudioAlive();
                     return;
                 }
                 preparePageChunks();
@@ -307,20 +335,20 @@
             utterance.lang = selectedLang;
             utterance.rate = currentSpeed;
 
+            // Pencarian suara yang dioptimalkan untuk mobile browser
             const voices = synth.getVoices();
             if (selectedLang === "id-ID") {
-                let edgeVoice = voices.find(v => v.name.includes("Natural") && (v.lang.startsWith("id")));
-                let localVoice = voices.find(v => v.lang === "id-ID" || v.lang.startsWith("id_") || v.lang.includes("ID"));
-                
-                if (edgeVoice) {
-                    utterance.voice = edgeVoice;
-                } else if (localVoice) {
-                    utterance.voice = localVoice;
+                let idVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('id'));
+                if (idVoice) {
+                    utterance.voice = idVoice;
                 }
             } else {
-                let englishVoice = voices.find(v => v.lang.startsWith("en"));
-                if (englishVoice) utterance.voice = englishVoice;
+                let enVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en'));
+                if (enVoice) utterance.voice = enVoice;
             }
+
+            // Aktifkan penjaga latar belakang sesaat sebelum suara berbunyi
+            keepAudioAlive();
 
             utterance.onend = () => {
                 if (isChangingState || isUserSeeking) return;
@@ -348,6 +376,7 @@
             if (synth.speaking && !isPaused) {
                 isPaused = true;
                 clearTimeout(pauseTimeout);
+                stopAudioAlive();
                 if (utterance) {
                     utterance.onend = null;
                     utterance.onerror = null;
@@ -361,6 +390,7 @@
             if (isPaused) {
                 isPaused = false;
                 document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
+                keepAudioAlive();
                 playChunkSequence();
             }
         }
