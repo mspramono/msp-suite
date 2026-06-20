@@ -97,6 +97,8 @@
         </div>
     </div>
 
+    <audio id="bg-silent-player" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="></audio>
+
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
@@ -112,11 +114,6 @@
         let textChunks = [];
         let currentChunkIdx = 0;
         let pauseTimeout = null;
-        
-        // Audio Context untuk menghasilkan "Gelombang Suara Hening Aktif" konstan demi mengelabui sistem Android
-        let wakeAudioContext = null;
-        let wakeOscillator = null;
-        let wakeGain = null;
 
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
@@ -126,54 +123,33 @@
         initVoices();
         window.speechSynthesis.onvoiceschanged = initVoices;
 
-        // FUNGSI WAKE LOCK AUDIO: Menghasilkan frekuensi 0Hz (tidak terdengar manusia) tapi membuat CPU ponsel mendeteksi aktivitas media konstan
-        function startWakeAudio() {
-            try {
-                if (!wakeAudioContext) {
-                    wakeAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    wakeOscillator = wakeAudioContext.createOscillator();
-                    wakeGain = wakeAudioContext.createGain();
-                    
-                    wakeOscillator.type = 'sine';
-                    wakeOscillator.frequency.value = 0; // Frekuensi 0 mutlak hening
-                    wakeGain.gain.value = 0.01; // Volume sangat tipis mendekati nol agar aman di sistem
-                    
-                    wakeOscillator.connect(wakeGain);
-                    wakeGain.connect(wakeAudioContext.destination);
-                    wakeOscillator.start(0);
-                } else if (wakeAudioContext.state === 'suspended') {
-                    wakeAudioContext.resume();
-                }
-
-                // Daftarkan ke Media Session Android agar kontrol panel muncul di laci notifikasi HP
+        // Fungsi pemicu Audio Latar Belakang mirip Undangan Digital
+        function triggerBackgroundAudio(play) {
+            const audioEl = document.getElementById('bg-silent-player');
+            if (play) {
+                audioEl.play().catch(e => console.log("Audio background aktif."));
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = "playing";
                     navigator.mediaSession.metadata = new MediaMetadata({
-                        title: '📚 Mode Bacakan Buku Sedang Aktif',
-                        artist: 'SuaraBuku App',
-                        album: 'Lokal Pemutar'
+                        title: "📖 Mode Membaca Buku Aktif",
+                        artist: "SuaraBuku",
+                        album: "Audio Latar Belakang"
                     });
                     navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
                     navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
                 }
-            } catch (e) {
-                console.log("Wake audio lock gagal diinisiasi: ", e);
-            }
-        }
-
-        function stopWakeAudio() {
-            if (wakeAudioContext && wakeAudioContext.state === 'running') {
-                wakeAudioContext.suspend();
-            }
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "paused";
+            } else {
+                audioEl.pause();
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = "paused";
+                }
             }
         }
 
         // FUNGSI MEGA RESET: Menghancurkan seluruh sisa antrean lama beserta callback-nya agar Chrome tidak crash
         function megaResetChromeSpeech() {
             clearTimeout(pauseTimeout);
-            stopWakeAudio();
+            triggerBackgroundAudio(false);
             
             // Putus total hubungan callback lama agar tidak menembakkan perintah liar saat di-cancel
             if (utterance) {
@@ -207,7 +183,7 @@
             if (!file) return alert("Silakan pilih file terlebih dahulu!");
 
             const btnText = document.getElementById('btn-text');
-            btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu...";
+            btnText.innerText = "⏳ Mengekstrak seluruh isi halaman dokumen... Mohon Tunggu... (Lokal)";
             document.getElementById('btn-process').disabled = true;
 
             extractedPagesText = [];
@@ -338,7 +314,7 @@
                 
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    stopWakeAudio();
+                    triggerBackgroundAudio(false);
                     return;
                 }
                 preparePageChunks();
@@ -352,8 +328,8 @@
 
             document.getElementById('reading-status').innerText = `🔊 Sedang membacakan: Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length})`;
 
-            // Eksekusi trigger pemicu penjaga latar belakang seluler sebelum text-to-speech dijalankan
-            startWakeAudio();
+            // Jalankan manipulasi audio undangan digital tepat sebelum robot bersuara
+            triggerBackgroundAudio(true);
 
             utterance = new SpeechSynthesisUtterance(currentItem.text);
             
@@ -361,17 +337,20 @@
             utterance.lang = selectedLang;
             utterance.rate = currentSpeed;
 
-            // STRATEGI BLOKADE BAHASA BARU: Paksa pencarian suara berdasarkan kode lokalitas string secara ketat
+            // PERBAIKAN TOTAL BAHASA: Abaikan huruf kapital besar/kecil dari pelaporan Android Chrome
             const voices = synth.getVoices();
             if (selectedLang === "id-ID") {
-                // Cari suara yang benar-benar mengandung penanda lokalitas 'id' Indonesia
-                let idVoice = voices.find(v => v.lang && (v.lang.toLowerCase() === 'id-id' || v.lang.toLowerCase() === 'id_id' || v.lang.toLowerCase().startsWith('id')));
-                if (idVoice) {
-                    utterance.voice = idVoice;
+                let edgeVoice = voices.find(v => v.name && v.name.includes("Natural") && v.lang && v.lang.toLowerCase().startsWith("id"));
+                let localVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("id"));
+                
+                if (edgeVoice) {
+                    utterance.voice = edgeVoice;
+                } else if (localVoice) {
+                    utterance.voice = localVoice;
                 }
             } else {
-                let enVoice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('en')));
-                if (enVoice) utterance.voice = enVoice;
+                let englishVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+                if (englishVoice) utterance.voice = englishVoice;
             }
 
             utterance.onend = () => {
@@ -387,8 +366,7 @@
             };
 
             utterance.onerror = (e) => {
-                // Di beberapa HP Android, ketika layar mati, TTS akan mengeluarkan status error 'interrupted' secara paksa.
-                // Baris ini akan memaksa system untuk melanjutkan pembacaan potongan kalimat berikutnya tanpa terhenti.
+                // Mencegah macet total saat layar mati di beberapa vendor HP
                 if (!isChangingState && !isPaused && !isUserSeeking) {
                     currentChunkIdx++;
                     playChunkSequence();
@@ -402,7 +380,7 @@
             if (synth.speaking && !isPaused) {
                 isPaused = true;
                 clearTimeout(pauseTimeout);
-                stopWakeAudio();
+                triggerBackgroundAudio(false);
                 if (utterance) {
                     utterance.onend = null;
                     utterance.onerror = null;
@@ -416,7 +394,7 @@
             if (isPaused) {
                 isPaused = false;
                 document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
-                startWakeAudio();
+                triggerBackgroundAudio(true);
                 playChunkSequence();
             }
         }
@@ -429,7 +407,6 @@
                 isChangingState = true; 
                 megaResetChromeSpeech();
                 
-                // Berikan jeda rilis state antrean lama 250ms sebelum memutar dengan kecepatan baru
                 setTimeout(() => {
                     isChangingState = false;
                     playChunkSequence(); 
@@ -437,7 +414,6 @@
             }
         }
 
-        // PERBAIKAN DOWNLOAD: Mengunduh file teks narasi bersih instan, bebas loading dan bebas dengung robot
         function downloadFullAudioRange() {
             const startPage = parseInt(document.getElementById('start-page').value) || 1;
             const endPage = parseInt(document.getElementById('end-page').value) || extractedPagesText.length;
@@ -467,7 +443,7 @@
                 a.click();
                 URL.revokeObjectURL(url);
 
-                alert("✔️ File Teks Narasi Berhasil Terunduh Sempurna Tanpa Dengung!");
+                alert("✔️ File Teks Narasi Berhasil Terunduh Sempurna!");
             } catch (err) {
                 alert("Gagal mendownload: " + err.message);
             } finally {
