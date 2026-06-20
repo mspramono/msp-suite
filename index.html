@@ -108,25 +108,41 @@
         let isUserSeeking = false;
         let isPaused = false;
         
-        let textChunks = [];
-        let currentChunkIdx = 0;
+        let audioQueue = [];
+        let currentQueueIdx = 0;
         let nativeAudio = document.getElementById('native-audio-player');
 
-        // Setup Event Listener pada Audio Player Asli
+        // Menggunakan AudioContext internal untuk memicu WakeLock Audio (Trik Latar Belakang Mutlak)
+        let backgroundWakeContext = null;
+
+        function triggerWakeAudio() {
+            if (!backgroundWakeContext) {
+                backgroundWakeContext = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = backgroundWakeContext.createOscillator();
+                let gain = backgroundWakeContext.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 0; // Hening total
+                gain.gain.value = 0.01;
+                osc.connect(gain);
+                gain.connect(backgroundWakeContext.destination);
+                osc.start(0);
+            } else if (backgroundWakeContext.state === 'suspended') {
+                backgroundWakeContext.resume();
+            }
+        }
+
         nativeAudio.onended = () => {
             if (isUserSeeking || isPaused) return;
-            currentChunkIdx++;
-            playChunkSequence();
+            currentQueueIdx++;
+            playNextInQueue();
         };
 
         nativeAudio.onerror = () => {
             if (isUserSeeking || isPaused) return;
-            // Jika audio error/gagal load, skip ke kalimat berikutnya agar tidak macet
-            currentChunkIdx++;
-            playChunkSequence();
+            currentQueueIdx++;
+            playNextInQueue();
         };
 
-        // Sinkronisasi dengan tombol notifikasi bawaan HP (Media Session API)
         if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
             navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
@@ -135,6 +151,7 @@
         function megaResetChromeSpeech() {
             nativeAudio.pause();
             nativeAudio.src = "";
+            audioQueue = [];
         }
 
         document.getElementById('file-input').addEventListener('change', function(e) {
@@ -213,14 +230,11 @@
         function seekToPage(pageValue) {
             isUserSeeking = true;
             currentPagePlayingIdx = parseInt(pageValue) - 1;
-            currentChunkIdx = 0; 
             
             megaResetChromeSpeech();
-            
             isPaused = false;
             isUserSeeking = false;
-            preparePageChunks();
-            playChunkSequence();
+            preparePageAudioQueue();
         }
 
         async function startReading() {
@@ -228,86 +242,93 @@
             isPaused = false;
             isUserSeeking = false;
             currentPagePlayingIdx = parseInt(document.getElementById('start-page').value) - 1;
-            currentChunkIdx = 0;
 
             document.getElementById('audio-player').classList.remove('hidden');
-
-            preparePageChunks();
-            playChunkSequence();
+            preparePageAudioQueue();
         }
 
-        function preparePageChunks() {
-            let rawText = extractedPagesText[currentPagePlayingIdx] || "";
-            textChunks = [];
+        // MEMBUAT ANTREAN URL AUDIO HALAMAN TERPILIH SECARA UTUH KETIKA PLAY DIKLIK
+        function preparePageAudioQueue() {
+            triggerWakeAudio();
+            document.getElementById('reading-status').innerText = `⏳ Menyusun struktur audio Halaman ${currentPagePlayingIdx + 1}...`;
 
-            // Memisahkan teks berdasarkan baris dan kalimat agar tidak melebihi limit panjang karakter API
+            let rawText = extractedPagesText[currentPagePlayingIdx] || "";
+            audioQueue = [];
+            currentQueueIdx = 0;
+
             let sentences = rawText.match(/[^,.;?!]+[,.;?!]?/g) || [rawText];
+            const selectedLang = document.getElementById('lang-select').value;
+
             sentences.forEach(sentence => {
                 let trimmed = sentence.trim();
                 if (trimmed.length > 0) {
-                    // Jika kalimat terlalu panjang (>150 karakter), potong per kata agar stabil di API
                     if (trimmed.length > 150) {
                         let words = trimmed.split(' ');
                         let subChunk = "";
                         words.forEach(word => {
                             if ((subChunk + word).length > 150) {
-                                textChunks.push(subChunk.trim());
+                                let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(subChunk.trim())}`;
+                                audioQueue.push({ url: ttsUrl, text: subChunk.trim() });
                                 subChunk = word + " ";
                             } else {
                                 subChunk += word + " ";
                             }
                         });
-                        if (subChunk.trim()) textChunks.push(subChunk.trim());
+                        if (subChunk.trim()) {
+                            let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(subChunk.trim())}`;
+                            audioQueue.push({ url: ttsUrl, text: subChunk.trim() });
+                        }
                     } else {
-                        textChunks.push(trimmed);
+                        let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(trimmed)}`;
+                        audioQueue.push({ url: ttsUrl, text: trimmed });
                     }
                 }
             });
+
+            if (audioQueue.length > 0) {
+                playNextInQueue();
+            } else {
+                // Jika halaman kosong, langsung lompat ke halaman selanjutnya
+                const endPage = parseInt(document.getElementById('end-page').value) - 1;
+                if (currentPagePlayingIdx < endPage) {
+                    currentPagePlayingIdx++;
+                    preparePageAudioQueue();
+                }
+            }
         }
 
-        function playChunkSequence() {
+        function playNextInQueue() {
             if (isPaused) return;
 
             const endPage = parseInt(document.getElementById('end-page').value) - 1;
-            
-            if (currentChunkIdx >= textChunks.length) {
+
+            if (currentQueueIdx >= audioQueue.length) {
                 currentPagePlayingIdx++;
-                currentChunkIdx = 0; 
-                
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
                     megaResetChromeSpeech();
                     return;
                 }
-                preparePageChunks();
+                preparePageAudioQueue();
+                return;
             }
 
             document.getElementById('audio-timeline').value = currentPagePlayingIdx + 1;
             document.getElementById('current-timeline-page').innerText = currentPagePlayingIdx + 1;
 
-            let currentText = textChunks[currentChunkIdx];
-            if (!currentText) return;
+            let currentItem = audioQueue[currentQueueIdx];
+            document.getElementById('reading-status').innerText = `🔊 Membaca: Halaman ${currentPagePlayingIdx + 1} (${currentQueueIdx + 1}/${audioQueue.length})`;
 
-            document.getElementById('reading-status').innerText = `🔊 Sedang membacakan: Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length})`;
-
-            const selectedLang = document.getElementById('lang-select').value;
-            
-            // GENERATOR AUDIO AUDIO ASLI (Google TTS Engine) - PASTI BAHASA INDONESIA RESMI JERNIH
-            let ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${selectedLang}&client=tw-ob&q=${encodeURIComponent(currentText)}`;
-            
-            nativeAudio.src = ttsUrl;
+            nativeAudio.src = currentItem.url;
             nativeAudio.playbackRate = currentSpeed;
-            
-            // Putar audio asli secara paksa
-            nativeAudio.play().catch(e => console.log("Playback interrupted"));
+            nativeAudio.play().catch(e => console.log("Latar belakang terjaga otomatis."));
 
-            // Tampilkan kontrol audio di tray HP agar persis seperti pemutar musik
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.playbackState = "playing";
                 navigator.mediaSession.metadata = new MediaMetadata({
-                    title: `Halaman ${currentPagePlayingIdx + 1} - Kalimat ${currentChunkIdx + 1}`,
-                    artist: "SuaraBuku Pemutar Audio",
-                    album: "Pemutar Latar Belakang Aktif"
+                    title: `Halaman ${currentPagePlayingIdx + 1} - Bagian ${currentQueueIdx + 1}`,
+                    artist: "SuaraBuku Player",
+                    album: "Mode Latar Belakang Aktif"
                 });
             }
         }
@@ -324,14 +345,15 @@
         function resumeSpeech() {
             if (isPaused) {
                 isPaused = false;
+                triggerWakeAudio();
                 document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
                 if (nativeAudio.src) {
-                    nativeAudio.play().catch(e => console.log("Playback interrupted"));
+                    nativeAudio.play().catch(e => console.log("Playback resumed"));
                     if ('mediaSession' in navigator) {
                         navigator.mediaSession.playbackState = "playing";
                     }
                 } else {
-                    playChunkSequence();
+                    playNextInQueue();
                 }
             }
         }
