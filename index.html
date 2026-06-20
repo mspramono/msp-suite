@@ -112,7 +112,11 @@
         let textChunks = [];
         let currentChunkIdx = 0;
         let pauseTimeout = null;
-        let silentAudioPlayer = null;
+        
+        // Audio Context untuk menghasilkan "Gelombang Suara Hening Aktif" konstan demi mengelabui sistem Android
+        let wakeAudioContext = null;
+        let wakeOscillator = null;
+        let wakeGain = null;
 
         function initVoices() {
             if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
@@ -122,25 +126,44 @@
         initVoices();
         window.speechSynthesis.onvoiceschanged = initVoices;
 
-        // Fungsi pemicu audio background agar sistem mobile mengizinkan tab tetap berjalan di latar belakang
-        function keepAudioAlive() {
-            if (!silentAudioPlayer) {
-                // Menggunakan base64 audio hening berdurasi 1 detik berputar terus menerus
-                silentAudioPlayer = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
-                silentAudioPlayer.loop = true;
-            }
-            silentAudioPlayer.play().catch(e => console.log("Latar belakang aktif via audio loop."));
+        // FUNGSI WAKE LOCK AUDIO: Menghasilkan frekuensi 0Hz (tidak terdengar manusia) tapi membuat CPU ponsel mendeteksi aktivitas media konstan
+        function startWakeAudio() {
+            try {
+                if (!wakeAudioContext) {
+                    wakeAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    wakeOscillator = wakeAudioContext.createOscillator();
+                    wakeGain = wakeAudioContext.createGain();
+                    
+                    wakeOscillator.type = 'sine';
+                    wakeOscillator.frequency.value = 0; // Frekuensi 0 mutlak hening
+                    wakeGain.gain.value = 0.01; // Volume sangat tipis mendekati nol agar aman di sistem
+                    
+                    wakeOscillator.connect(wakeGain);
+                    wakeGain.connect(wakeAudioContext.destination);
+                    wakeOscillator.start(0);
+                } else if (wakeAudioContext.state === 'suspended') {
+                    wakeAudioContext.resume();
+                }
 
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "playing";
-                navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
-                navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
+                // Daftarkan ke Media Session Android agar kontrol panel muncul di laci notifikasi HP
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = "playing";
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: '📚 Mode Bacakan Buku Sedang Aktif',
+                        artist: 'SuaraBuku App',
+                        album: 'Lokal Pemutar'
+                    });
+                    navigator.mediaSession.setActionHandler('play', () => resumeSpeech());
+                    navigator.mediaSession.setActionHandler('pause', () => pauseSpeech());
+                }
+            } catch (e) {
+                console.log("Wake audio lock gagal diinisiasi: ", e);
             }
         }
 
-        function stopAudioAlive() {
-            if (silentAudioPlayer) {
-                silentAudioPlayer.pause();
+        function stopWakeAudio() {
+            if (wakeAudioContext && wakeAudioContext.state === 'running') {
+                wakeAudioContext.suspend();
             }
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.playbackState = "paused";
@@ -150,7 +173,7 @@
         // FUNGSI MEGA RESET: Menghancurkan seluruh sisa antrean lama beserta callback-nya agar Chrome tidak crash
         function megaResetChromeSpeech() {
             clearTimeout(pauseTimeout);
-            stopAudioAlive();
+            stopWakeAudio();
             
             // Putus total hubungan callback lama agar tidak menembakkan perintah liar saat di-cancel
             if (utterance) {
@@ -315,7 +338,7 @@
                 
                 if (currentPagePlayingIdx > endPage) {
                     document.getElementById('reading-status').innerText = "🏁 Selesai membacakan seluruh rentang halaman.";
-                    stopAudioAlive();
+                    stopWakeAudio();
                     return;
                 }
                 preparePageChunks();
@@ -329,26 +352,27 @@
 
             document.getElementById('reading-status').innerText = `🔊 Sedang membacakan: Halaman ${currentPagePlayingIdx + 1} (Kalimat ${currentChunkIdx + 1}/${textChunks.length})`;
 
+            // Eksekusi trigger pemicu penjaga latar belakang seluler sebelum text-to-speech dijalankan
+            startWakeAudio();
+
             utterance = new SpeechSynthesisUtterance(currentItem.text);
             
             const selectedLang = document.getElementById('lang-select').value;
             utterance.lang = selectedLang;
             utterance.rate = currentSpeed;
 
-            // Pencarian suara yang dioptimalkan untuk mobile browser
+            // STRATEGI BLOKADE BAHASA BARU: Paksa pencarian suara berdasarkan kode lokalitas string secara ketat
             const voices = synth.getVoices();
             if (selectedLang === "id-ID") {
-                let idVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('id'));
+                // Cari suara yang benar-benar mengandung penanda lokalitas 'id' Indonesia
+                let idVoice = voices.find(v => v.lang && (v.lang.toLowerCase() === 'id-id' || v.lang.toLowerCase() === 'id_id' || v.lang.toLowerCase().startsWith('id')));
                 if (idVoice) {
                     utterance.voice = idVoice;
                 }
             } else {
-                let enVoice = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en'));
+                let enVoice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('en')));
                 if (enVoice) utterance.voice = enVoice;
             }
-
-            // Aktifkan penjaga latar belakang sesaat sebelum suara berbunyi
-            keepAudioAlive();
 
             utterance.onend = () => {
                 if (isChangingState || isUserSeeking) return;
@@ -363,6 +387,8 @@
             };
 
             utterance.onerror = (e) => {
+                // Di beberapa HP Android, ketika layar mati, TTS akan mengeluarkan status error 'interrupted' secara paksa.
+                // Baris ini akan memaksa system untuk melanjutkan pembacaan potongan kalimat berikutnya tanpa terhenti.
                 if (!isChangingState && !isPaused && !isUserSeeking) {
                     currentChunkIdx++;
                     playChunkSequence();
@@ -376,7 +402,7 @@
             if (synth.speaking && !isPaused) {
                 isPaused = true;
                 clearTimeout(pauseTimeout);
-                stopAudioAlive();
+                stopWakeAudio();
                 if (utterance) {
                     utterance.onend = null;
                     utterance.onerror = null;
@@ -390,7 +416,7 @@
             if (isPaused) {
                 isPaused = false;
                 document.getElementById('reading-status').innerText = "🔊 Memulai kembali pembacaan...";
-                keepAudioAlive();
+                startWakeAudio();
                 playChunkSequence();
             }
         }
